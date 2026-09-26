@@ -2,7 +2,7 @@
 #
 #   make                  build/hub.bin and the test programs
 #   make test             run them in the emulator
-#   make B=build/x GUARDS=0 REPAIR=0
+#   make B=build/x GUARDS=0 REPAIR=0 SNAPSHOT=0
 #                         a build with a feature switched off, for the tests
 #                         that check each feature is what makes them pass
 #
@@ -13,9 +13,10 @@ ZAP_SRC ?= $(HOME)/code/zap
 B       ?= build
 GUARDS  ?= 1
 REPAIR  ?= 1
+SNAPSHOT ?= 1
 
 ZAP     := $(abspath build/zap)
-CORE_MAX := 1664        # CTL_BASE - CORE_BASE: the core's code must end below its data
+CORE_MAX := 1792        # CTL_BASE - CORE_BASE: the core's code must end below its data
 
 ZAP_SRCS := $(addprefix $(ZAP_SRC)/, src/zap.c src/symtab.c src/scan.c src/expr.c \
 	src/macro.c src/directive.c src/insn.c src/object.c src/buf_reader.c \
@@ -38,7 +39,8 @@ $(ZAP): $(ZAP_SRCS)
 # Rewritten only when a setting changes, so switching GUARDS rebuilds the core.
 $(B)/config.inc: FORCE
 	@mkdir -p $(B)
-	@printf 'GUARDS: equ %s\nREPAIR: equ %s\n' $(GUARDS) $(REPAIR) > $@.new
+	@printf 'GUARDS: equ %s\nREPAIR: equ %s\nSNAPSHOT: equ %s\n' \
+		$(GUARDS) $(REPAIR) $(SNAPSHOT) > $@.new
 	@cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
 $(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/config.inc $(ZAP)

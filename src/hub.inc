@@ -66,6 +66,14 @@ HUB_BLOCK:      equ     26
 ; hub_depth        HL = the number of open frames.
 HUB_DEPTH:      equ     30
 
+; hub_resumed      In a continuation: HL = 1 if the machine was reset while
+;                  its frame's job was running -- the job then counts as
+;                  failed, with HUB_RESULT_RESET -- and 0 otherwise.
+;                  Anywhere else: 0. (Since version 0.2.)
+HUB_RESUMED:    equ     34
+
+HUB_RESULT_RESET:       equ     255     ; the result of a job a reset cut short
+
 ; Flags for hub_push.
 HUB_STOP_ON_ERROR:      equ     $01     ; a non-zero result skips the rest of the
                                         ; frame's jobs, up to its continuation

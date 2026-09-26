@@ -18,6 +18,7 @@
 
         XDEF    _hub_present, _hub_enter, _hub_push, _hub_return_to
         XDEF    _hub_last_result, _hub_failed_job, _hub_block, _hub_depth
+        XDEF    _hub_resumed
 
 mos_readvarval: equ     $31
 HUB_ERR_ABSENT: equ     255
@@ -42,6 +43,22 @@ _hub_present:
         pop     ix
         or      a, a
         jr      nz, @absent
+
+; readvarval answers for a neighbouring variable when the one asked for
+; doesn't exist (MOS 3.0.2's readVarVal), so check the name it matched --
+; returned in IY -- before trusting the value.
+        ld      hl, v_api
+
+@name:
+        ld      a, (iy+0)
+        xor     a, (hl)
+        and     a, $df
+        jr      nz, @absent
+        ld      a, (hl)
+        inc     hl
+        inc     iy
+        or      a, a
+        jr      nz, @name
 
         ld      iy, (hub_api)
         ld      a, (iy+HUB_MAGIC)
@@ -95,7 +112,8 @@ _hub_return_to:
         call    api
         jr      status
 
-; int hub_last_result(void), int hub_failed_job(void), int hub_depth(void):
+; int hub_last_result(void), int hub_failed_job(void), int hub_depth(void),
+; int hub_resumed(void):
 ; the API's HL is already the int C wants.
 _hub_last_result:
         ld      a, HUB_LAST_RESULT
@@ -107,6 +125,10 @@ _hub_failed_job:
 
 _hub_depth:
         ld      a, HUB_DEPTH
+        jr      value
+
+_hub_resumed:
+        ld      a, HUB_RESUMED
         jr      value
 
 ; void *hub_block(const char tag[4], size_t size)

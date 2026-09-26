@@ -29,8 +29,8 @@ card() {
     cp "$EMU/sdcard/MOS.bin" "$EMU/sdcard/firmware.bin" "$sd/"
     mkdir -p "$sd/bin"
     cp "$1/hub.bin" "$sd/mos/"
-    cp "$1/test/stomp.bin" "$sd/mos/"
-    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient; do
+    cp "$1/test/stomp.bin" "$1/test/bigmos.bin" "$sd/mos/"
+    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient reset; do
         cp "$1/test/$p.bin" "$sd/bin/"
     done
 
@@ -52,6 +52,17 @@ card() {
         echo "client c"
         echo "client o"
         echo "client f"
+        echo "client b"
+        echo "bigmos"
+        echo "client B"
+        echo "client m"
+        echo "wc /autoexec.txt"
+        echo "Echo after-wc"
+        echo "client B"
+        echo "hub"
+        echo "Show Hotkey\$12"
+        echo "client r"
+        echo "Echo after-reset"
         echo "cclient"
     } > "$sd/script.txt"
 
@@ -87,7 +98,7 @@ sd=$(card "$ROOT/build")
 out=$(run "$sd" 300)
 rm -rf "$sd"
 
-has "$out" "hub 0.1" && pass "hub starts" || fail "hub starts"
+has "$out" "hub 0.2" && pass "hub starts" || fail "hub starts"
 
 want=$((ROUNDS + 2))
 got=$(count "$out" "hello from a child")
@@ -143,9 +154,9 @@ fi
 # The C client, through include/hub.h and lib/hub_glue.s: its third run's
 # frame fails on purpose, and the fourth run, that frame's continuation, sees
 # which job and why.
-if has "$out" "cclient 1: last 0, failed -1, depth 0" \
-   && has "$out" "cclient 4: last 19, failed 0, depth 0" \
-   && has "$out" "cclient 5: last 0, failed -1, depth 0" \
+if has "$out" "cclient 1: last 0, failed -1, depth 0, resumed 0" \
+   && has "$out" "cclient 4: last 19, failed 0, depth 0, resumed 0" \
+   && has "$out" "cclient 5: last 0, failed -1, depth 0, resumed 0" \
    && has "$out" "cclient done" && ! has "$out" "cclient-not-run"; then
     pass "a C client chains through hub.h, and sees a failed frame"
 else
@@ -155,6 +166,51 @@ fi
 ! has "$out" "a long command was accepted" \
     && pass "hub_push refuses a command longer than HUB_CMD_MAX" \
     || fail "hub_push refuses a command longer than HUB_CMD_MAX"
+
+# --- repair and recovery -----------------------------------------------------
+
+# bigmos loads 8 KB at 0xB0000, over the shell and the block header, as nano
+# does; the byte kept in a block before it comes back from the card.
+kept=$(sed -n '/^keep set 42$/,/^after moslet/p' <<< "$out")
+if has "$kept" "hub: shell reloaded" && has "$kept" "keep 42"; then
+    pass "a moslet over the blocks: they come back from the card"
+else
+    fail "a moslet over the blocks: they come back from the card"
+fi
+
+# client m runs bigmos itself, then asks for its block: hub_block repairs.
+grep -q -A1 '^after moslet: hub: shell reloaded$' <<< "$out" \
+    && grep -A1 '^after moslet: ' <<< "$out" | grep -qx '42' \
+    && pass "a program that runs a moslet itself gets its block back" \
+    || fail "a program that runs a moslet itself gets its block back"
+
+# wc, from MOS's own /mos, is a real moslet of 11.9 KB -- bigger than nano --
+# that exits by itself; the block must survive it too.
+after_wc=$(sed -n '/^after-wc$/,$p' <<< "$out")
+if has "$out" "after-wc" && has "$after_wc" "keep 42"; then
+    pass "a real moslet (wc, 11.9 KB) leaves hub and the blocks working"
+else
+    fail "a real moslet (wc, 11.9 KB) leaves hub and the blocks working"
+fi
+
+has "$out" "hub is already running" && pass "a second hub refuses to start" \
+    || fail "a second hub refuses to start"
+
+grep -q 'Hotkey\$12 : hub' <<< "$out" && pass "F12 is bound to hub" \
+    || fail "F12 is bound to hub"
+
+# client r queues "reset" -- a warm reset, as Ctrl-Alt-Del -- then an Echo,
+# then its continuation. autoexec starts hub again, which resumes: the job
+# counts as failed with 255, the Echo is skipped, the continuation runs and
+# says why, and the script carries on from the next line, once.
+if has "$out" "resumed after a reset" \
+   && has "$out" "resumed 1, failed job 0, result 255" \
+   && ! has "$out" "NOT-AFTER-RESET" \
+   && [ "$(grep -cx 'after-reset' <<< "$out")" -eq 1 ]; then
+    pass "after a reset, hub resumes: the frame's continuation runs"
+else
+    fail "after a reset, hub resumes: the frame's continuation runs"
+fi
 
 ! has "$out" "hub refused a call" && pass "no API call was refused" \
     || fail "no API call was refused"
@@ -179,6 +235,17 @@ has "$out" "free handles: 5" && pass "control: without guards the files leak" \
     || fail "control: without guards the files leak"
 has "$out" "vector: user" && pass "control: without guards the handler stays" \
     || fail "control: without guards the handler stays"
+
+make -s -C "$ROOT" B=build/nosnapshot SNAPSHOT=0 >/dev/null || { echo "FAIL  build"; exit 1; }
+sd=$(card "$ROOT/build/nosnapshot")
+out=$(run "$sd" 300)
+rm -rf "$sd"
+
+if has "$out" "hub: client blocks lost" && has "$out" "keep 0"; then
+    pass "control: without snapshots a moslet loses the blocks"
+else
+    fail "control: without snapshots a moslet loses the blocks"
+fi
 
 make -s -C "$ROOT" B=build/norepair REPAIR=0 >/dev/null || { echo "FAIL  build"; exit 1; }
 sd=$(card "$ROOT/build/norepair")

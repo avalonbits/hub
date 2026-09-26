@@ -43,10 +43,10 @@
 ;   0xB7F300            CORE_BASE: this file's code, copied here by the shell
 ;                       at start-up. It must end before CTL_BASE; the Makefile
 ;                       fails the build if it doesn't.
-;   0xB7F980            CTL_BASE: the control block -- hub's state, the job
+;   0xB7FA00            CTL_BASE: the control block -- hub's state, the job
 ;                       queue and the frames. It is not part of this image, so
 ;                       copying the core in never overwrites it, and it
-;                       survives a reloaded shell.
+;                       survives a reloaded shell and a warm reset.
 ;   0xB80000            SRAM_END.
 ;
 ; ENTRY POINTS
@@ -56,8 +56,8 @@
 ;
 ;   CORE_BASE + 0   core_main   (shell) run commands until the shell says stop
 ;   CORE_BASE + 4   shell_sum   (shell) checksum the shell's code
-;   CORE_BASE + 8   core_init   (shell) record vectors, set up blocks, publish
-;                               the API
+;   CORE_BASE + 8   core_init   (shell) A = 0 to start afresh, 1 to resume
+;                               after a reset
 ;   CORE_BASE + 12  the client API header and its jump table (see hub.inc)
 ;
 ; The core calls back into the shell at one fixed address, SHELL_READLINE,
@@ -85,6 +85,8 @@
 ;   GUARDS  1 = clean up after every command. 0 exists only so the tests can
 ;             show their checks fail without it.
 ;   REPAIR  1 = reload the shell when a moslet has overwritten it. 0 likewise.
+;   SNAPSHOT 1 = save the client blocks to the card when they change, and
+;             restore them after a moslet. 0 likewise.
 ; ============================================================================
 
         ASSUME  ADL=1
@@ -113,8 +115,8 @@
 api_header:
         db      "HUB"                   ; HUB_MAGIC
         db      0                       ; HUB_MAJOR
-        db      1                       ; HUB_MINOR
-        db      7                       ; HUB_COUNT
+        db      2                       ; HUB_MINOR
+        db      8                       ; HUB_COUNT
         jp      api_enter               ; HUB_ENTER
         jp      api_push                ; HUB_PUSH
         jp      api_return_to           ; HUB_RETURN_TO
@@ -122,53 +124,50 @@ api_header:
         jp      api_failed_job          ; HUB_FAILED_JOB
         jp      api_block               ; HUB_BLOCK
         jp      api_depth               ; HUB_DEPTH
+        jp      api_resumed             ; HUB_RESUMED
 
 ; ----------------------------------------------------------------------------
-; core_init: everything the core sets up once, when hub starts.
+; core_init: everything the core sets up when hub starts.
 ;
-; In:   the shell has copied the core in and zeroed the control block.
-; Out:  interrupt vectors recorded, block area empty, Hub$API published.
-;       CTL_CMD is used as scratch.
-;       IX and IY preserved; everything else clobbered.
+; In:   A = 0 to start afresh: the shell has zeroed the control block.
+;       A = 1 to resume after a warm reset: the control block is as the reset
+;       left it, since the on-chip SRAM keeps its contents.
+; In, both: CTL_BLKPATH set by the shell.
+; Out:  the client blocks set up (afresh) or checked (resuming); a job the
+;       reset cut short settled; interrupt vectors recorded. The shell then
+;       publishes Hub$API and binds F12 -- start-up work that needs no
+;       protection from moslets, and so stays out of the core.
+;       IX and IY preserved; the rest clobbered.
+;
+; Resuming. MOS keeps RAM across a warm reset (it checks a magic word at
+; 0xBFFFA and skips its memory wipe), but it re-initialises its own state:
+; its variables, handlers and hooks are gone, so the vectors are recorded
+; again (and the shell publishes Hub$API again). What survives is hub's control block,
+; with the queue as it was. A job that was running when the reset came is
+; treated as failed, with RESULT_RESET, and its frame marked as cut short:
+; the rest of the frame is skipped, and its continuation -- usually the
+; program that queued it -- runs next and can see why with hub_resumed.
 ; ----------------------------------------------------------------------------
 core_init:
         push    ix
         push    iy
+        or      a, a
+        jr      nz, @resume
 
         ld      a, $ff
         ld      (CTL_JOB), a            ; no job running
-        ld      (CTL_DONE + 7), a       ; no frame has finished, so none failed
+        call    clear_done
+        call    init_blocks
+        call    save_blocks             ; so a restore always has a file
+        jr      @common
 
+@resume:
+        call    settle_reset
+        call    blocks_valid
+        call    nz, restore_blocks
+
+@common:
         call    snapshot_vectors
-
-        ld      hl, BLK_DATA
-        ld      (BLK_NEXT), hl
-        xor     a, a
-        ld      (BLK_COUNT), a
-
-; Publish the API as a Number variable, through the SetEval command rather
-; than mos_setvarval (API $30). In MOS 3.0.2, setVarVal only creates a
-; variable when getSystemVariable returns -1, but that returns a positive
-; number for "not found" whenever the name would sort after an existing
-; variable -- so the API call quietly overwrites that neighbour instead
-; (mos_sysvars.c, setVarVal: `if (result == -1)`). With the names MOS has at
-; boot, "Hub$API" lands on Current$Dir. SetEval goes through
-; createOrUpdateSystemVariable, which gets this right, and reads & as hex.
-        ld      hl, set_api
-        ld      de, CTL_CMD
-        ld      bc, set_api_end - set_api
-        ldir                            ; "SetEval Hub$API &"
-        ld      a, (HUB_HEADER >> 16) & $ff
-        call    hex_byte
-        ld      a, (HUB_HEADER >> 8) & $ff
-        call    hex_byte
-        ld      a, HUB_HEADER & $ff
-        call    hex_byte
-        xor     a, a
-        ld      (de), a
-        ld      hl, CTL_CMD
-        ld      a, mos_oscli
-        rst.lil $08
 
         pop     iy
         pop     ix
@@ -176,13 +175,45 @@ core_init:
         ret
 
 ; ----------------------------------------------------------------------------
+; settle_reset: settle the job a warm reset cut short, if there was one.
+;
+; See core_init. A continuation cut short has no frame left to report to --
+; it closed when the continuation started -- so only its result is set.
+; Clobbers everything.
+; ----------------------------------------------------------------------------
+settle_reset:
+        ld      a, (CTL_JOB)
+        cp      a, $ff
+        jr      z, @none
+        call    job_addr
+        ld      hl, RESULT_RESET
+        ld      (ix+JOB_RESULT), hl
+        bit     7, (ix+JOB_FLAGS)       ; HUB_CONTINUATION
+        jr      nz, @none
+
+        ld      a, (ix+JOB_FRAME)
+        call    frame_addr
+        ld      (iy+FRAME_RESULT), hl
+        ld      a, (ix+JOB_INDEX)
+        ld      (iy+FRAME_FAILED), a
+        ld      (iy+FRAME_RESET), 1
+        ld      a, (ix+JOB_FRAME)
+        call    skip_frame
+
+@none:
+        ld      a, $ff
+        ld      (CTL_JOB), a
+
+        jp      clear_done
+
+; ----------------------------------------------------------------------------
 ; core_main: run commands until the shell hands back HL = 0.
 ;
 ; In:   core_init has run, and the control block holds CTL_SUMLEN, CTL_SUM
 ;       and CTL_SELF, since the first thing the loop does is check the shell
 ;       against them.
-; Out:  returns to the shell when the shell's readline returns HL = 0, having
-;       withdrawn Hub$API. IX and IY are preserved; everything else clobbered.
+; Out:  returns to the shell when the shell's readline returns HL = 0.
+;       IX and IY are preserved; everything else clobbered.
 ;
 ; Each turn of the loop:
 ;
@@ -201,6 +232,7 @@ core_main:
 
 @loop:
         call    check_shell             ; a moslet may have loaded over it
+        call    snapshot_blocks         ; save the blocks if a program changed them
         call    next_job                ; carry set: a job ran
         jr      c, @loop
 
@@ -214,13 +246,7 @@ core_main:
         call    run_cmd
         jr      @loop
 
-; Withdraw the API, so programs run after hub has gone don't call into a
-; core that no longer answers.
 @done:
-        ld      hl, unset_api
-        ld      a, mos_oscli
-        rst.lil $08
-
         pop     iy
         pop     ix
 
@@ -445,8 +471,8 @@ close_frame:
         call    frame_addr
         lea     hl, iy+FRAME_TAG
         ld      de, CTL_DONE
-        ld      bc, 8                   ; tag, result, failed: the frame's
-        ldir                            ; first eight bytes, as CTL_DONE's
+        ld      bc, FRAME_DONE          ; tag, result, failed, reset: the
+        ldir                            ; frame's first bytes, as CTL_DONE's
         pop     af
         ld      (CTL_DEPTH), a
 
@@ -466,8 +492,9 @@ clear_done:
         ld      (CTL_DONE), hl          ; tag, first three bytes
         ld      (CTL_DONE + 3), hl      ; its fourth, and the result's first two
         ld      (CTL_DONE + 5), hl      ; the result's last, and ...
+        ld      (CTL_DONE + 6), hl      ; ... not cut short by a reset
         ld      a, $ff
-        ld      (CTL_DONE + 7), a       ; ... no failed job
+        ld      (DONE_FAILED), a        ; no failed job
 
         ret
 
@@ -572,6 +599,7 @@ api_enter:
         ld      hl, 0
         ld      (iy+FRAME_RESULT), hl
         ld      (iy+FRAME_FAILED), $ff
+        ld      (iy+FRAME_RESET), 0
         ld      (iy+FRAME_COUNT), 0
         ld      hl, CTL_DEPTH
         inc     (hl)
@@ -688,17 +716,18 @@ push_job:
 ;                  continuation is running; 0 in anything else.
 ; api_failed_job:  HL = the index of the job that stopped it, or -1.
 ; api_depth:       HL = the number of open frames.
+; api_resumed:     HL = 1 if a reset cut that frame's job short, else 0.
 ; Each returns A = 0 and touches only A, HL and the flags.
 ; ----------------------------------------------------------------------------
 api_last_result:
-        ld      hl, (CTL_DONE + 4)
+        ld      hl, (DONE_RESULT)
         xor     a, a
 
         ret
 
 api_failed_job:
         ld      hl, 0
-        ld      a, (CTL_DONE + 7)
+        ld      a, (DONE_FAILED)
         ld      l, a
         cp      a, $ff
         jr      nz, @found
@@ -712,6 +741,14 @@ api_failed_job:
 api_depth:
         ld      hl, 0
         ld      a, (CTL_DEPTH)
+        ld      l, a
+        xor     a, a
+
+        ret
+
+api_resumed:
+        ld      hl, 0
+        ld      a, (DONE_RESET)
         ld      l, a
         xor     a, a
 
@@ -732,6 +769,18 @@ api_depth:
 api_block:
         push    ix
         push    iy
+
+; A program may have run a moslet itself -- mc runs nano -- and the moslet
+; may have loaded over the shell and the blocks. Repair both before handing
+; out memory there.
+        push    hl
+        push    bc
+        call    check_shell
+        call    blocks_valid
+        call    nz, init_blocks
+        pop     bc
+        pop     hl
+
         ld      (CTL_PUSH_CMD), hl      ; the tag (scratch shared with push)
         push    bc
         pop     iy                      ; IY = the size asked for
@@ -821,6 +870,158 @@ api_block:
         ld      hl, 0
         ld      a, 1
         jp      api_out
+
+; ============================================================================
+; Keeping the client blocks
+; ============================================================================
+;
+; The blocks live in the moslet area, above the shell, where a big enough
+; moslet (nano is 6.5 KB) loads over them. So the core keeps a copy on the
+; card: before each command, if the blocks' checksum differs from the one
+; taken at the last save, they are saved again -- the header, the directory
+; and the part of the data in use, as one file next to hub.bin. After a
+; moslet, they are restored from it.
+;
+; What a restore can lose is only what a program wrote to its block during
+; the same command in which it then ran a moslet itself: the copy on the card
+; is from before that command started.
+; ============================================================================
+
+; ----------------------------------------------------------------------------
+; init_blocks: an empty block area.            Clobbers A, BC, DE, HL.
+; ----------------------------------------------------------------------------
+init_blocks:
+        ld      hl, blk_magic
+        ld      de, BLK_MAGIC
+        ld      bc, 4
+        ldir
+        ld      hl, BLK_DATA
+        ld      (BLK_NEXT), hl
+        xor     a, a
+        ld      (BLK_COUNT), a
+
+        ret
+
+; ----------------------------------------------------------------------------
+; blocks_valid: Z if the block area's header makes sense -- the magic is
+; there and BLK_NEXT lies within the area. Clobbers A, B, DE, HL.
+; ----------------------------------------------------------------------------
+blocks_valid:
+        ld      hl, blk_magic
+        ld      de, BLK_MAGIC
+        ld      b, 4
+
+@cmp:
+        ld      a, (de)
+        cp      a, (hl)
+        ret     nz
+        inc     de
+        inc     hl
+        djnz    @cmp
+
+        ld      hl, (BLK_NEXT)
+        ld      de, BLK_DATA
+        or      a, a
+        sbc     hl, de
+        jr      c, @bad
+        ld      hl, (BLK_NEXT)
+        ld      de, BLK_END + 1
+        or      a, a
+        sbc     hl, de
+        jr      nc, @bad
+        xor     a, a                    ; Z
+
+        ret
+
+@bad:
+        or      a, 1                    ; NZ
+
+        ret
+
+; ----------------------------------------------------------------------------
+; blocks_len: BC = the bytes of the block area in use, header included.
+; blocks_sum: HL = their checksum.
+; Both assume blocks_valid. Clobber A, BC, DE, HL (and IY: blocks_sum).
+; ----------------------------------------------------------------------------
+blocks_len:
+        ld      hl, (BLK_NEXT)
+        ld      de, BLOCKS
+        or      a, a
+        sbc     hl, de
+        push    hl
+        pop     bc
+
+        ret
+
+blocks_sum:
+        call    blocks_len
+        ld      iy, BLOCKS
+
+        jp      sum_range
+
+; ----------------------------------------------------------------------------
+; snapshot_blocks: save the blocks if they have changed since the last save.
+; save_blocks: save them regardless.
+;
+; mos_save (API 0x02): HL = file name, DE = address, BC = length; A = 0 when
+; saved. A failed save leaves CTL_BLKSUM as it was, so the next command tries
+; again. Clobbers everything a MOS call may.
+; ----------------------------------------------------------------------------
+snapshot_blocks:
+        IF SNAPSHOT
+        call    blocks_valid
+        ret     nz                      ; never save a damaged area
+        call    blocks_sum
+        ld      de, (CTL_BLKSUM)
+        or      a, a
+        sbc     hl, de
+        ret     z                       ; unchanged
+        ENDIF
+
+save_blocks:
+        IF SNAPSHOT
+        call    blocks_sum
+        push    hl
+        call    blocks_len
+        ld      hl, CTL_BLKPATH
+        ld      de, BLOCKS
+        ld      a, mos_save
+        rst.lil $08
+        pop     hl
+        or      a, a
+        ret     nz
+        ld      (CTL_BLKSUM), hl
+        ENDIF
+
+        ret
+
+; ----------------------------------------------------------------------------
+; restore_blocks: after a moslet, put the blocks back from the card.
+;
+; Falls back to what is in memory if the file can't be read but the area
+; still looks valid, and to an empty area (with a message) if not.
+; Clobbers everything a MOS call may.
+; ----------------------------------------------------------------------------
+restore_blocks:
+        IF SNAPSHOT
+        ld      hl, CTL_BLKPATH
+        ld      de, BLOCKS
+        ld      bc, BLK_END - BLOCKS
+        ld      a, mos_load
+        rst.lil $08
+        ENDIF
+
+        call    blocks_valid
+        jr      z, @done
+        call    init_blocks
+        ld      hl, msg_blocks_lost
+        call    print
+
+@done:
+        call    blocks_sum
+        ld      (CTL_BLKSUM), hl
+
+        ret
 
 ; ============================================================================
 ; Cleaning up after commands
@@ -1036,7 +1237,7 @@ report:
 ; other program's code" that is not a practical concern.
 ;
 ; A moslet that overwrote the shell may also have overwritten the client
-; blocks above it; saving them to the card and restoring them is phase 2.
+; blocks above it, so they are restored from the card too (restore_blocks).
 ;
 ; If the reload fails there is nothing safe to do: every return address above
 ; us on the stack points into the shell, which isn't there. So the core says
@@ -1061,8 +1262,9 @@ check_shell:
         ld      hl, CTL_RELOADS
         inc     (hl)                    ; counted, for tests and diagnostics
         ld      hl, msg_reloaded
+        call    print
 
-        jp      print
+        jp      restore_blocks          ; the moslet may have reached them too
 
 @failed:
         ld      hl, msg_lost
@@ -1075,14 +1277,20 @@ check_shell:
         ret
 
 ; ----------------------------------------------------------------------------
-; shell_sum: HL = the 24-bit sum of the shell's code bytes.
+; shell_sum: HL = the checksum of the shell's code.
+; sum_range: HL = the checksum of BC bytes from IY.
 ;
-; In:   CTL_SUMLEN = how many bytes, from SHELL_BASE. Must not be 0.
-; Out:  HL = the sum. Clobbers A, BC, DE, IY.
+; In:   shell_sum: CTL_SUMLEN, how many bytes from SHELL_BASE.
+;       sum_range: IY = start, BC = length, not 0.
+; Out:  HL. Clobbers A, BC, DE, IY.
 ;
-; DE is zeroed once and only E is ever loaded, so `add hl, de` adds one
-; unsigned byte each time. The largest possible sum, 4 KB of 0xFF, easily
-; fits in 24 bits.
+; The sum so far is rotated left one bit before each byte is added, so the
+; checksum depends on where each byte is, not just which bytes there are: a
+; block whose two bytes swap places reads as changed. Rotated, not shifted:
+; `add hl, hl` alone would push each byte out of the 24 bits after 24 more,
+; and only the last 24 bytes would count -- a moslet loading over the start
+; of the shell would go unnoticed. `adc` puts the bit that fell off the top
+; back in at the bottom, along with the byte.
 ;
 ; The loop's end test: in ADL mode `dec bc` sets no flags, and testing B and C
 ; alone would miss the upper byte. Adding BC to a zeroed HL with carry clear
@@ -1091,12 +1299,15 @@ check_shell:
 shell_sum:
         ld      iy, SHELL_BASE
         ld      bc, (CTL_SUMLEN)
+
+sum_range:
         ld      hl, 0
         ld      de, 0
 
 @next:
         ld      e, (iy+0)
-        add     hl, de
+        add     hl, hl                  ; carry = the bit that fell off
+        adc     hl, de                  ; the byte, and that bit, back in
         inc     iy
         dec     bc
         push    hl
@@ -1105,32 +1316,6 @@ shell_sum:
         adc     hl, bc                  ; Z if BC == 0
         pop     hl
         jr      nz, @next
-
-        ret
-
-; ----------------------------------------------------------------------------
-; hex_byte: write A as two upper-case hex digits at DE, advancing DE.
-; Clobbers A, C.
-; ----------------------------------------------------------------------------
-hex_byte:
-        ld      c, a
-        rra
-        rra
-        rra
-        rra
-        call    @digit
-        ld      a, c
-
-@digit:
-        and     a, $0f
-        add     a, '0'
-        cp      a, '9' + 1
-        jr      c, @put
-        add     a, 'A' - '9' - 1
-
-@put:
-        ld      (de), a
-        inc     de
 
         ret
 
@@ -1179,9 +1364,8 @@ MOS_ERRORS:     equ     27
 
 try_prefix:     db      "Try "                  ; no terminator: build_cmd copies 4
 v_try_rc:       db      "Try$ReturnCode", 0
-set_api:        db      "SetEval Hub$API &"     ; + the header's address, in hex
-set_api_end:
-unset_api:      db      "Unset Hub$API", 0
+blk_magic:      db      "BLK0"
+msg_blocks_lost: db     "hub: client blocks lost", 13, 10, 0
 nlcr:           db      10, 13, 0               ; MOS's own order, "\n\r"
 msg_long:       db      "hub: line too long", 13, 10, 0
 msg_reloaded:   db      "hub: shell reloaded", 13, 10, 0

@@ -35,6 +35,7 @@
 #define HUB_PAUSE_AFTER     0x04    /* reserved: "press a key" afterwards */
 
 #define HUB_CMD_MAX         93      /* longest command a job can hold */
+#define HUB_RESULT_RESET    255     /* the result of a job a reset cut short */
 
 /* Status codes. */
 #define HUB_OK              0
@@ -68,5 +69,10 @@ void *hub_block(const char tag[4], size_t size);
 
 /* How many frames are open. */
 int hub_depth(void);
+
+/* In a continuation: 1 if the machine was reset while its frame's job was
+ * running -- that job then counts as failed, with HUB_RESULT_RESET -- else
+ * 0. Anywhere else: 0. Needs hub 0.2 or later. */
+int hub_resumed(void);
 
 #endif

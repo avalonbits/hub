@@ -31,8 +31,8 @@ int main(void)
     }
 
     ++*count;
-    printf("cclient %d: last %d, failed %d, depth %d\r\n", *count,
-           hub_last_result(), hub_failed_job(), hub_depth());
+    printf("cclient %d: last %d, failed %d, depth %d, resumed %d\r\n", *count,
+           hub_last_result(), hub_failed_job(), hub_depth(), hub_resumed());
 
     if (*count >= 5) {
         printf("cclient done\r\n");

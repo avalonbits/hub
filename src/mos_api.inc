@@ -2,6 +2,7 @@
 ; Each is called with `ld a, <number>` then `rst.lil $08`.
 
 mos_load:               equ     $01
+mos_save:               equ     $02
 mos_editline:           equ     $09
 mos_fopen:              equ     $0A
 mos_fclose:             equ     $0B

@@ -13,6 +13,13 @@
 ;   f   Open a frame with "fail" (stop on error), "Echo SHOULD-NOT-RUN", and
 ;       the continuation "client F".
 ;   F   Print which job stopped the frame and its result.
+;   b   Set the byte in block "KEEP" to 42.
+;   B   Print the byte in block "KEEP".
+;   m   Run the moslet bigmos itself, through OSCLI -- as mc runs nano -- then
+;       print the byte in "KEEP" again. hub_block repairs first.
+;   r   Open a frame with "reset" (which resets the machine), then
+;       "Echo NOT-AFTER-RESET", and the continuation "client R".
+;   R   Print whether the frame was cut short by a reset, and how.
 ;
 ; Without hub it prints "no hub" and returns.
 
@@ -53,6 +60,16 @@ start:
         jp      z, failing
         cp      a, 'F'
         jp      z, failed
+        cp      a, 'b'
+        jp      z, keep_set
+        cp      a, 'B'
+        jp      z, keep_show
+        cp      a, 'm'
+        jp      z, moslet
+        cp      a, 'r'
+        jp      z, resetting
+        cp      a, 'R'
+        jp      z, reset_back
 
 finish:
         pop     iy
@@ -170,6 +187,80 @@ failed:
         call    newline
         jp      finish
 
+keep_set:
+        call    keep
+        ld      (hl), 42
+        ld      hl, msg_keep_set
+        call    print
+        jp      finish
+
+keep_show:
+        ld      hl, msg_keep
+        call    print
+        call    keep
+        ld      a, (hl)
+        call    print_u8
+        call    newline
+        jp      finish
+
+moslet:
+        ld      hl, cmd_bigmos
+        ld      a, mos_oscli
+        rst.lil $08
+        ld      hl, msg_after
+        call    print
+        call    keep
+        ld      a, (hl)
+        call    print_u8
+        call    newline
+        jp      finish
+
+; keep: HL = block "KEEP", one byte.
+keep:
+        ld      hl, tag_keep
+        ld      bc, 1
+        ld      a, HUB_BLOCK
+        jp      hub
+
+resetting:
+        ld      hl, tag_rst
+        ld      a, HUB_ENTER
+        call    hub
+        ld      hl, cmd_reset
+        ld      c, 0
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_not_after
+        ld      c, 0
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_reset_back
+        ld      a, HUB_RETURN_TO
+        call    hub
+        jp      finish
+
+reset_back:
+        ld      hl, msg_resumed
+        call    print
+        ld      a, HUB_RESUMED
+        call    hub
+        ld      a, l
+        call    print_u8
+        ld      hl, msg_failed_job2
+        call    print
+        ld      a, HUB_FAILED_JOB
+        call    hub
+        ld      a, l
+        call    print_u8
+        ld      hl, msg_result
+        call    print
+        ld      a, HUB_LAST_RESULT
+        call    hub
+        ld      a, l
+        call    print_u8
+        call    newline
+        jp      finish
+
 ; find_hub: carry set if hub is running and its header is one we know, with
 ; the header's address in (api).
 find_hub:
@@ -182,6 +273,22 @@ find_hub:
         rst.lil $08
         or      a, a
         ret     nz                      ; no variable: carry clear from the or
+
+; readvarval answers for a neighbouring variable when the one asked for
+; doesn't exist (MOS 3.0.2's readVarVal), so check the name it matched --
+; returned in IY -- before trusting the value.
+        ld      hl, v_api
+
+@name:
+        ld      a, (iy+0)
+        xor     a, (hl)
+        and     a, $df
+        jr      nz, @no
+        ld      a, (hl)
+        inc     hl
+        inc     iy
+        or      a, a
+        jr      nz, @name
 
         ld      iy, (api)
         ld      a, (iy+HUB_MAGIC)
@@ -296,6 +403,17 @@ cmd_fail:       db      "fail", 0
 cmd_not_run:    db      "Echo SHOULD-NOT-RUN", 0
 cmd_failed:     db      "client F", 0
 msg_nohub:      db      "no hub", 13, 10, 0
+tag_keep:       db      "KEEP"
+tag_rst:        db      "RST "
+cmd_bigmos:     db      "bigmos", 0
+cmd_reset:      db      "reset", 0
+cmd_not_after:  db      "Echo NOT-AFTER-RESET", 0
+cmd_reset_back: db      "client R", 0
+msg_keep_set:   db      "keep set 42", 13, 10, 0
+msg_keep:       db      "keep ", 0
+msg_after:      db      "after moslet: ", 0
+msg_resumed:    db      "resumed ", 0
+msg_failed_job2: db     ", failed job ", 0
 msg_refused:    db      "hub refused a call: ", 0
 msg_count:      db      "count ", 0
 msg_count_done: db      "count done", 13, 10, 0
