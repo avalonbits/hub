@@ -1,6 +1,6 @@
-# chain: build with a host copy of zap, the eZ80 assembler.
+# hub: build with a host copy of zap, the eZ80 assembler.
 #
-#   make                  build/chain.bin and the test programs
+#   make                  build/hub.bin and the test programs
 #   make test             run them in the emulator
 #   make B=build/x GUARDS=0 REPAIR=0
 #                         a build with a feature switched off, for the tests
@@ -25,7 +25,7 @@ PROGS := $(patsubst test/progs/%.s,$(B)/test/%.bin,$(wildcard test/progs/*.s))
 
 .PHONY: all test clean FORCE
 
-all: $(B)/chain.bin $(PROGS)
+all: $(B)/hub.bin $(PROGS)
 
 $(ZAP): $(ZAP_SRCS)
 	@mkdir -p $(dir $@)
@@ -44,9 +44,9 @@ $(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc $(B)/config.inc $(ZAP)
 	@size=$$(stat -c %s $@); if [ $$size -gt $(CORE_MAX) ]; then \
 		echo "core is $$size bytes; it must fit in $(CORE_MAX)"; rm -f $@; exit 1; fi
 
-$(B)/chain.bin: src/chain.s src/mos_api.inc src/layout.inc $(B)/core.bin $(ZAP)
-	cp src/chain.s src/mos_api.inc src/layout.inc $(B)/
-	cd $(B) && $(ZAP) -c chain.s chain.bin > chain.log || { cat chain.log; exit 1; }
+$(B)/hub.bin: src/hub.s src/mos_api.inc src/layout.inc $(B)/core.bin $(ZAP)
+	cp src/hub.s src/mos_api.inc src/layout.inc $(B)/
+	cd $(B) && $(ZAP) -c hub.s hub.bin > hub.log || { cat hub.log; exit 1; }
 
 $(B)/test/%.bin: test/progs/%.s src/mos_api.inc $(ZAP)
 	@mkdir -p $(B)/test

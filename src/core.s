@@ -1,14 +1,14 @@
 ; ============================================================================
-; chain's core
+; hub's core
 ; ============================================================================
 ;
-; The core is the part of chain that gets control back from every command.
+; The core is the part of hub that gets control back from every command.
 ;
 ; WHY THERE IS A CORE AT ALL
 ;
 ; The Agon runs one program at a time. MOS loads a normal program at 0x40000
 ; and a moslet at 0xB0000, calls it, and when it returns, control goes back to
-; whoever asked MOS to run it. chain wants to be that "whoever" for every
+; whoever asked MOS to run it. hub wants to be that "whoever" for every
 ; command, so that it can run the next one, clean up after the last one, and
 ; eventually bring programs back when they ask. That means the code that calls
 ; MOS -- and so the code MOS returns into -- must still be intact after any
@@ -24,18 +24,18 @@
 ;                                             |
 ;                                  the command runs, returns to the core
 ;
-; The shell -- everything else in chain -- is a moslet at 0xB0000, and any
+; The shell -- everything else in hub -- is a moslet at 0xB0000, and any
 ; moslet the user runs loads over it. The core notices that after the command
 ; and reloads the shell from the card before calling into it again.
 ;
 ; WHERE THINGS ARE (see layout.inc)
 ;
 ;   0xB7E000-0xB7F2FF   12AM Commander's launcher and mailboxes. Not ours;
-;                       chain starts above them so both can be present.
+;                       hub starts above them so both can be present.
 ;   0xB7F300            CORE_BASE: this file's code, copied here by the shell
 ;                       at start-up. It must end before CTL_BASE; the Makefile
 ;                       fails the build if it doesn't.
-;   0xB7FE00            CTL_BASE: the control block, chain's state. It is not
+;   0xB7FE00            CTL_BASE: the control block, hub's state. It is not
 ;                       part of this image, so copying the core in never
 ;                       overwrites it, and it survives a reloaded shell.
 ;   0xB80000            SRAM_END.
@@ -49,7 +49,7 @@
 ;   CORE_BASE + 4   shell_sum   checksum the shell's code (used at start-up)
 ;
 ; and the core calls back into the shell at one fixed address, SHELL_READLINE,
-; which returns the next line to run (or HL = 0 to leave chain). Those three
+; which returns the next line to run (or HL = 0 to leave hub). Those three
 ; addresses are the whole contract between the two parts.
 ;
 ; CALLING MOS
@@ -113,7 +113,7 @@
 ;   - OSCLI runs its argument with mos_exec(cmd, in_mos = false). With that
 ;     flag, a bare name like "aed" is only looked up as a moslet, because
 ;     MOS assumes a program calling OSCLI doesn't want to be overwritten by a
-;     program at 0x40000. chain wants exactly that, so it needs the rules
+;     program at 0x40000. hub wants exactly that, so it needs the rules
 ;     MOS's own prompt uses: mos_exec(line, in_mos = true).
 ;   - Both Do and Try call mos_exec(line, true). But Do is declared with
 ;     expandArgs, so MOS runs GSTrans over the line before Do sees it, and
@@ -199,7 +199,7 @@ build_cmd:
 ; In:   nothing.
 ; Out:  clobbers everything a MOS call may.
 ;
-; Runs after every command, whether or not the program knows about chain.
+; Runs after every command, whether or not the program knows about hub.
 ; Each of these is something MOS 3.0.2 doesn't clean up when a program exits:
 ;
 ;   Keyboard hook   A program can register a routine that MOS calls from the
@@ -213,13 +213,13 @@ build_cmd:
 ;   Open files      MOS has eight file handles and never closes a program's
 ;                   files for it. A program that leaks three leaves the next
 ;                   one with five. mos_fclose with C = 0 closes all of them.
-;                   That is safe only because chain itself never holds a file
+;                   That is safe only because hub itself never holds a file
 ;                   open while a command runs: the shell opens its script,
 ;                   reads one line and closes it again before handing the
 ;                   line over.
 ;
 ; Not yet: interrupt vectors a program changed with API 0x14. Restoring them
-; needs chain to record them at start-up; that is phase 1.
+; needs hub to record them at start-up; that is phase 1.
 ; ----------------------------------------------------------------------------
 guards:
         ld      hl, 0                   ; no hook
@@ -248,7 +248,7 @@ guards:
 ; Note that the code is not always what the program returned: when a program
 ; found on the run path returns 1, 4 or 5, mos_exec replaces it with 20,
 ; "Invalid command", since it can't tell a failing program from a missing
-; one. MOS's prompt shows the same thing, so chain does too.
+; one. MOS's prompt shows the same thing, so hub does too.
 ;
 ; readvarval (API 0x31) arguments:
 ;   HL = variable name        IX = where to put the value
@@ -304,7 +304,7 @@ report:
 ; The shell's code is summed and compared with the sum taken at start-up.
 ; A difference means something was loaded into the moslet area: almost always
 ; a moslet the user ran (nano, say), directly or from a script or from inside
-; another program. The shell is then reloaded from the file chain was started
+; another program. The shell is then reloaded from the file hub was started
 ; from -- the path MOS put in LastBin$Run, which the shell copied to CTL_SELF.
 ;
 ; mos_load (API 0x01) arguments:
@@ -314,7 +314,7 @@ report:
 ;
 ; Only the code is summed, not the shell's variables at SHELL_VARS, which
 ; change as it runs. A plain sum can in principle miss a change that happens
-; to add up to the same total; for telling "chain's code" from "some other
+; to add up to the same total; for telling "hub's code" from "some other
 ; program's code" that is not a practical concern.
 ;
 ; If the reload fails there is nothing safe to do: every return address above
@@ -433,8 +433,8 @@ MOS_ERRORS:     equ     27
 try_prefix:     db      "Try "                  ; no terminator: build_cmd copies 4
 v_try_rc:       db      "Try$ReturnCode", 0
 nlcr:           db      10, 13, 0               ; MOS's own order, "\n\r"
-msg_long:       db      "chain: line too long", 13, 10, 0
-msg_reloaded:   db      "chain: shell reloaded", 13, 10, 0
-msg_lost:       db      "chain: cannot reload the shell; reset the machine", 13, 10, 0
+msg_long:       db      "hub: line too long", 13, 10, 0
+msg_reloaded:   db      "hub: shell reloaded", 13, 10, 0
+msg_lost:       db      "hub: cannot reload the shell; reset the machine", 13, 10, 0
 
 core_end:

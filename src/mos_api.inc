@@ -1,4 +1,4 @@
-; MOS API function numbers used by chain (MOS 3.0.2, src/mos_api.inc).
+; MOS API function numbers used by hub (MOS 3.0.2, src/mos_api.inc).
 ; Each is called with `ld a, <number>` then `rst.lil $08`.
 
 mos_load:               equ     $01

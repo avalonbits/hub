@@ -1,10 +1,10 @@
-# chain
+# hub
 
 A resident shell for the Agon (MOS 3.0.2). It runs every command itself, so
 it gets control back after each one: the basis for chaining programs ("run
 this, then bring me back"), for state that outlives a program, and for
 cleaning up after programs that leave hooks or files behind. The design is in
-the "chain: a resident shell for the Agon" document.
+the "hub: a resident shell for the Agon" document.
 
 This is the phase 0 spike: the prompt loop, the guards, and the two-part
 layout.
@@ -15,13 +15,13 @@ layout.
   prompt rules, expanded once -- then clears any keyboard hook, closes any
   files left open, prints MOS's message for a failure, and reloads the shell
   if a moslet loaded over it.
-- **The shell** (`src/chain.s`) is a moslet at `0xB0000`: it installs the
+- **The shell** (`src/hub.s`) is a moslet at `0xB0000`: it installs the
   core, then reads lines for it -- from MOS's line editor with `CLI$Prompt`,
-  or from a script with `chain -f <file>`. `exit` leaves chain.
+  or from a script with `hub -f <file>`. `exit` leaves hub.
 
 ## Build and test
 
-    make          # build/chain.bin, assembled with a host build of zap
+    make          # build/hub.bin, assembled with a host build of zap
     make test     # the emulator checks, and the controls that show each
                   # check fails without the feature it covers
 
@@ -30,5 +30,5 @@ emulator release (default `~/fab-agon-emulator-1.2.4`).
 
 ## Install
 
-Copy `build/chain.bin` to `/mos/` on the card and type `chain`, or put
-`chain` at the end of `autoexec.obey`.
+Copy `build/hub.bin` to `/mos/` on the card and type `hub`, or put
+`hub` at the end of `autoexec.obey`.

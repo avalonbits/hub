@@ -1,7 +1,7 @@
 ; fail: return 19, which MOS reports as "Invalid parameter".
 ;
 ; Not 1, 4 or 5: mos_exec turns those into "Invalid command" when a program
-; returns them, at its own prompt as under chain.
+; returns them, at its own prompt as under hub.
 
         ASSUME  ADL=1
         ORG     $40000

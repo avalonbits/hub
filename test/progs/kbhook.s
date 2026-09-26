@@ -1,6 +1,6 @@
 ; kbhook: install a keyboard hook and return without removing it.
 ;
-; The handler is copied to on-chip SRAM below chain's core, so it would still
+; The handler is copied to on-chip SRAM below hub's core, so it would still
 ; be there to run; what matters to the test is only that MOS still points at
 ; it after this program has gone.
 

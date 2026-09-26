@@ -1,5 +1,5 @@
 #!/bin/bash
-# Phase 0: chain in the emulator, driven through a script on the card.
+# Phase 0: hub in the emulator, driven through a script on the card.
 #
 #   test/run.sh             the spike's checks, and the controls that show
 #                           each check fails without the feature it covers
@@ -8,7 +8,7 @@
 # build run from its own directory, a card seeded with MOS's own files, the
 # command in autoexec.txt (never typed into stdin), stdin held open with a
 # fifo, and both output streams captured. The script's last line runs
-# emulator_exit_success, which stops the emulator when chain gets that far.
+# emulator_exit_success, which stops the emulator when hub gets that far.
 set -uo pipefail
 
 ROOT=$(cd "$(dirname "$0")/.." && pwd)
@@ -21,14 +21,14 @@ status=0
 pass() { echo "PASS  $1"; }
 fail() { echo "FAIL  $1"; status=1; }
 
-# card <build dir>: a fresh card with MOS's files, chain and the programs.
+# card <build dir>: a fresh card with MOS's files, hub and the programs.
 card() {
     local sd
     sd=$(mktemp -d)
     cp -r "$EMU/sdcard/mos" "$sd/"
     cp "$EMU/sdcard/MOS.bin" "$EMU/sdcard/firmware.bin" "$sd/"
     mkdir -p "$sd/bin"
-    cp "$1/chain.bin" "$sd/mos/"
+    cp "$1/hub.bin" "$sd/mos/"
     cp "$1/test/stomp.bin" "$sd/mos/"
     for p in hello fail kbhook kbprobe leak fprobe; do
         cp "$1/test/$p.bin" "$sd/bin/"
@@ -49,7 +49,7 @@ card() {
         echo "Echo rounds done"
         echo "emulator_exit_success"
     } > "$sd/script.txt"
-    printf 'chain -f /script.txt\r\n' > "$sd/autoexec.txt"
+    printf 'hub -f /script.txt\r\n' > "$sd/autoexec.txt"
 
     echo "$sd"
 }
@@ -71,14 +71,14 @@ run() {
 has() { grep -qF -- "$2" <<< "$1"; }
 count() { grep -cF -- "$2" <<< "$1"; }
 
-# --- chain as built --------------------------------------------------------
+# --- hub as built --------------------------------------------------------
 
 make -s -C "$ROOT" >/dev/null || { echo "FAIL  build"; exit 1; }
 sd=$(card "$ROOT/build")
 out=$(run "$sd" 300)
 rm -rf "$sd"
 
-has "$out" "chain 0.0" && pass "chain starts" || fail "chain starts"
+has "$out" "hub 0.0" && pass "hub starts" || fail "hub starts"
 
 want=$((ROUNDS + 2))
 got=$(count "$out" "hello from a child")
@@ -94,7 +94,7 @@ has "$out" "kbvector: clear" && pass "a leftover keyboard hook is cleared" \
 has "$out" "free handles: 8" && pass "leaked files are closed" \
     || fail "leaked files are closed"
 
-has "$out" "chain: shell reloaded" && pass "a moslet over the shell is repaired" \
+has "$out" "hub: shell reloaded" && pass "a moslet over the shell is repaired" \
     || fail "a moslet over the shell is repaired"
 
 # GSTrans turns |< into <. Expanded a second time, <once> would become the
@@ -123,9 +123,9 @@ out=$(run "$sd" 30)
 rm -rf "$sd"
 
 if has "$out" "stomp: a moslet ran" && ! has "$out" "rounds done"; then
-    pass "control: without repair chain is lost after a moslet"
+    pass "control: without repair hub is lost after a moslet"
 else
-    fail "control: without repair chain is lost after a moslet"
+    fail "control: without repair hub is lost after a moslet"
 fi
 
 exit $status

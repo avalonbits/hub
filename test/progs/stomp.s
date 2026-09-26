@@ -1,4 +1,4 @@
-; stomp: a moslet. MOS loads it at 0xB0000, over chain's shell.
+; stomp: a moslet. MOS loads it at 0xB0000, over hub's shell.
 
         ASSUME  ADL=1
         ORG     $b0000

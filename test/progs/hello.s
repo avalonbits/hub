@@ -1,4 +1,4 @@
-; hello: print a line and return 0 -- the ordinary program chain runs.
+; hello: print a line and return 0 -- the ordinary program hub runs.
 
         ASSUME  ADL=1
         ORG     $40000

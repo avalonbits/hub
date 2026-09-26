@@ -1,4 +1,4 @@
-; chain's shell: the prompt, and what starts chain.
+; hub's shell: the prompt, and what starts hub.
 ;
 ; MOS loads this as a moslet at SHELL_BASE. On start it copies the core into
 ; the on-chip SRAM and hands over to it; from then on the core calls back in
@@ -6,8 +6,8 @@
 ; code, and the core reloads it from the card, so nothing here may hold state
 ; that has to survive a command: that lives in the control block.
 ;
-;   chain               an interactive prompt, like MOS's own
-;   chain -f <script>   run each line of a file, then leave (for tests)
+;   hub               an interactive prompt, like MOS's own
+;   hub -f <script>   run each line of a file, then leave (for tests)
 
         ASSUME  ADL=1
         INCLUDE "mos_api.inc"
@@ -57,7 +57,7 @@ start:
         call    CORE_SUM
         ld      (CTL_SUM), hl
 
-; Where chain was run from, so the core can reload the shell. The control
+; Where hub was run from, so the core can reload the shell. The control
 ; block was zeroed and the length leaves room, so the copy stays terminated.
         ld      hl, v_lastbin
         ld      ix, CTL_SELF
@@ -115,7 +115,7 @@ parse_args:
 
         ret
 
-; readline: HL = the next line to run, or 0 to leave chain.
+; readline: HL = the next line to run, or 0 to leave hub.
 readline:
         ld      a, (CTL_MODE)
         or      a, a
@@ -166,7 +166,7 @@ prompt_line:
         jp      builtin
 
 ; A script line. The file is opened for each line and closed before the line
-; runs, so chain holds no file while a command does, and a command that closes
+; runs, so hub holds no file while a command does, and a command that closes
 ; every file can't take the script with it.
 script_line:
         ld      hl, CTL_SCRIPT
@@ -231,7 +231,7 @@ script_line:
 
         ret
 
-; builtin: HL = a line. Handles chain's own commands; otherwise returns the
+; builtin: HL = a line. Handles hub's own commands; otherwise returns the
 ; line for the core to run.
 builtin:
         call    skip_spaces
@@ -359,17 +359,17 @@ print:
 
         ret
 
-magic:          db      "CHN0"
+magic:          db      "HUB0"
 v_lastbin:      db      "LastBin$Run", 0
 v_prompt:       db      "CLI$Prompt", 0
 star:           db      "*", 0
 s_exit:         db      "exit", 0
-script_echo:    db      "chain> ", 0
+script_echo:    db      "hub> ", 0
 crlf:           db      13, 10, 0
 nlcr:           db      10, 13, 0
-msg_banner:     db      "chain 0.0 (phase 0 spike)", 13, 10, 0
+msg_banner:     db      "hub 0.0 (phase 0 spike)", 13, 10, 0
 msg_escape:     db      "Escape", 10, 13, 0
-msg_noscript:   db      "chain: cannot open the script", 13, 10, 0
+msg_noscript:   db      "hub: cannot open the script", 13, 10, 0
 
 core_image:
         INCBIN  "core.bin"
