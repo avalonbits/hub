@@ -254,7 +254,7 @@ tool_check() {
     fi
 }
 tool_check zap "$ZAP_BIN" /zap.err "/bad.s:2:3: error: unknown instruction 'frob'"
-tool_check acc "$ACC_BIN" /acc.err "/bad.c:3:0: error:"
+tool_check acc "$ACC_BIN" /acc.err "/bad.c:3:12: error: 'x' is not declared"
 
 ! has "$out" "hub refused a call" && pass "no API call was refused" \
     || fail "no API call was refused"
