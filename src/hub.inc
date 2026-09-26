@@ -48,12 +48,13 @@ HUB_PUSH:       equ     10
 ;                  Errors as hub_push.
 HUB_RETURN_TO:  equ     14
 
-; hub_last_result  HL = the result of the last job in the frame that most
-;                  recently finished -- read it from its continuation.
+; hub_last_result  In a continuation: HL = the result of the last job of the
+;                  frame it closes. Anywhere else: 0.
 HUB_LAST_RESULT: equ    18
 
-; hub_failed_job   HL = the index (from 0, in push order) of the job that
-;                  stopped that frame, or -1 if none did.
+; hub_failed_job   In a continuation: HL = the index (from 0, in push order)
+;                  of the job that stopped its frame, or -1 if none did.
+;                  Anywhere else: -1.
 HUB_FAILED_JOB: equ     22
 
 ; hub_block        HL = 4-byte tag, BC = size

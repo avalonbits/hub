@@ -30,7 +30,7 @@ card() {
     mkdir -p "$sd/bin"
     cp "$1/hub.bin" "$sd/mos/"
     cp "$1/test/stomp.bin" "$sd/mos/"
-    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client; do
+    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient; do
         cp "$1/test/$p.bin" "$sd/bin/"
     done
 
@@ -52,11 +52,12 @@ card() {
         echo "client c"
         echo "client o"
         echo "client f"
+        echo "cclient"
     } > "$sd/script.txt"
 
     # The script ends by running out of lines, which leaves hub; the lines
     # after it run at MOS's own prompt, with hub gone.
-    printf 'hub -f /script.txt\r\nclient c\r\nemulator_exit_success\r\n' \
+    printf 'hub -f /script.txt\r\nclient c\r\ncclient\r\nemulator_exit_success\r\n' \
         > "$sd/autoexec.txt"
 
     echo "$sd"
@@ -139,6 +140,22 @@ else
     fail "a failed stop-on-error job skips to the continuation, which sees why"
 fi
 
+# The C client, through include/hub.h and lib/hub_glue.s: its third run's
+# frame fails on purpose, and the fourth run, that frame's continuation, sees
+# which job and why.
+if has "$out" "cclient 1: last 0, failed -1, depth 0" \
+   && has "$out" "cclient 4: last 19, failed 0, depth 0" \
+   && has "$out" "cclient 5: last 0, failed -1, depth 0" \
+   && has "$out" "cclient done" && ! has "$out" "cclient-not-run"; then
+    pass "a C client chains through hub.h, and sees a failed frame"
+else
+    fail "a C client chains through hub.h, and sees a failed frame"
+fi
+
+! has "$out" "a long command was accepted" \
+    && pass "hub_push refuses a command longer than HUB_CMD_MAX" \
+    || fail "hub_push refuses a command longer than HUB_CMD_MAX"
+
 ! has "$out" "hub refused a call" && pass "no API call was refused" \
     || fail "no API call was refused"
 
@@ -146,6 +163,8 @@ fi
 tail_out=$(sed -n '/^outer back$/,$p' <<< "$out")
 has "$tail_out" "no hub" && pass "leaving hub withdraws Hub\$API" \
     || fail "leaving hub withdraws Hub\$API"
+has "$tail_out" "cclient: no hub" && pass "hub_present() is false without hub" \
+    || fail "hub_present() is false without hub"
 
 # --- controls: each check above must fail without its feature ---------------
 

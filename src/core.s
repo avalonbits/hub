@@ -210,6 +210,7 @@ core_main:
 
         call    build_cmd               ; CTL_CMD = "Try " + line
         jr      c, @loop                ; too long: reported, skip it
+        call    clear_done              ; not a continuation
         call    run_cmd
         jr      @loop
 
@@ -322,7 +323,8 @@ build_cmd:
 ; Closing. A frame closes when its continuation starts: its tag, the result of
 ; its last job and the index of the job that stopped it (if any) are copied to
 ; CTL_DONE, and the depth drops. The continuation reads them there with
-; hub_last_result and hub_failed_job. Closing before the continuation runs --
+; hub_last_result and hub_failed_job. Anything else that runs clears CTL_DONE
+; first, so only the continuation ever sees them. Closing before the continuation runs --
 ; not after -- is what lets a program chain to itself indefinitely: each run
 ; opens one new frame at the same depth instead of one level deeper.
 ;
@@ -390,7 +392,11 @@ next_job:
         ld      a, (CTL_JOB)
         call    job_addr                ; IX = the job
         bit     7, (ix+JOB_FLAGS)       ; HUB_CONTINUATION
-        jr      z, @run
+        jr      nz, @closing
+        call    clear_done              ; an ordinary job sees no results
+        jr      @run
+
+@closing:
         ld      a, (ix+JOB_FRAME)
         call    close_frame
 
@@ -443,6 +449,25 @@ close_frame:
         ldir                            ; first eight bytes, as CTL_DONE's
         pop     af
         ld      (CTL_DEPTH), a
+
+        ret
+
+; ----------------------------------------------------------------------------
+; clear_done: forget the last closed frame's results.
+;
+; CTL_DONE describes the frame whose continuation is running, and nothing
+; else: anything that isn't a continuation -- a typed line, a script line, an
+; ordinary job -- sees a result of 0 and no failed job, so a program started
+; afresh can't mistake an earlier frame's results for its own.
+; Clobbers A, HL.
+; ----------------------------------------------------------------------------
+clear_done:
+        ld      hl, 0
+        ld      (CTL_DONE), hl          ; tag, first three bytes
+        ld      (CTL_DONE + 3), hl      ; its fourth, and the result's first two
+        ld      (CTL_DONE + 5), hl      ; the result's last, and ...
+        ld      a, $ff
+        ld      (CTL_DONE + 7), a       ; ... no failed job
 
         ret
 
@@ -659,8 +684,8 @@ push_job:
         jp      api_out
 
 ; ----------------------------------------------------------------------------
-; api_last_result: HL = the result of the last job of the frame that most
-;                  recently closed.
+; api_last_result: HL = the result of the last job of the frame whose
+;                  continuation is running; 0 in anything else.
 ; api_failed_job:  HL = the index of the job that stopped it, or -1.
 ; api_depth:       HL = the number of open frames.
 ; Each returns A = 0 and touches only A, HL and the flags.
@@ -675,9 +700,9 @@ api_failed_job:
         ld      hl, 0
         ld      a, (CTL_DONE + 7)
         ld      l, a
-        inc     a
-        jr      nz, @found              ; not $FF
-        dec     hl                      ; 0 - 1 = -1 in all 24 bits
+        cp      a, $ff
+        jr      nz, @found
+        ld      hl, -1                  ; all 24 bits, as C's int -1
 
 @found:
         xor     a, a

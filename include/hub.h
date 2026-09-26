@@ -1,0 +1,72 @@
+/*
+ * hub.h -- the hub client API, for C programs built with agondev.
+ *
+ * hub is a resident shell for MOS 3.0.2. A program running under it can ask
+ * hub to run commands after it returns, and to bring it back afterwards:
+ *
+ *     if (hub_present()) {
+ *         struct view *v = hub_block("FMGR", sizeof *v);   // survives the run
+ *
+ *         save_view(v);
+ *         hub_enter("FMGR");
+ *         hub_push("aed notes.txt", 0);
+ *         hub_return_to("fmgr -resume");
+ *
+ *         return 0;                                        // hub takes over
+ *     }
+ *
+ * Nothing runs until the program returns: the calls only record what to do.
+ * Call hub_present() first; every other call fails (returns HUB_ERR_ABSENT,
+ * or 0 for hub_block) when it hasn't found hub. A program must keep working
+ * without hub -- on a machine without it, hub_present() is simply false.
+ *
+ * Link with libhub.a (lib/hub_glue.s, assembled with zap -f elf).
+ */
+#ifndef HUB_H
+#define HUB_H
+
+#include <stdbool.h>
+#include <stddef.h>
+
+/* Flags for hub_push. */
+#define HUB_STOP_ON_ERROR   0x01    /* a non-zero result skips the rest of the
+                                       frame's jobs, up to its continuation */
+#define HUB_USER_PROGRAM    0x02    /* reserved: reset the screen first */
+#define HUB_PAUSE_AFTER     0x04    /* reserved: "press a key" afterwards */
+
+#define HUB_CMD_MAX         93      /* longest command a job can hold */
+
+/* Status codes. */
+#define HUB_OK              0
+#define HUB_ERR_DEPTH       1       /* hub_enter: frames nested too deep */
+#define HUB_ERR_NO_FRAME    1       /* hub_push, hub_return_to: no hub_enter */
+#define HUB_ERR_FULL        2       /* the queue is full */
+#define HUB_ERR_TOO_LONG    3       /* the command is longer than HUB_CMD_MAX */
+#define HUB_ERR_ABSENT      255     /* hub_present() hasn't found hub */
+
+/* True if hub is running and speaks a version this header knows. */
+bool hub_present(void);
+
+/* Open a frame for the jobs pushed next, named by a 4-character tag. */
+int hub_enter(const char tag[4]);
+
+/* Queue a command, as it would be typed at the prompt, in the open frame. */
+int hub_push(const char *cmd, unsigned char flags);
+
+/* Set the frame's continuation: run last, even if a job before it failed. */
+int hub_return_to(const char *cmd);
+
+/* In a continuation: the result of the last job of the frame it closes, and
+ * the index (in push order) of the job that stopped that frame, or -1.
+ * Anywhere else -- a program started afresh -- 0 and -1. */
+int hub_last_result(void);
+int hub_failed_job(void);
+
+/* Memory that keeps its contents between runs, zeroed when first created.
+ * NULL if there is no room, or the tag exists with a smaller size. */
+void *hub_block(const char tag[4], size_t size);
+
+/* How many frames are open. */
+int hub_depth(void);
+
+#endif

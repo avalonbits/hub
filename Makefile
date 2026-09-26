@@ -21,7 +21,10 @@ ZAP_SRCS := $(addprefix $(ZAP_SRC)/, src/zap.c src/symtab.c src/scan.c src/expr.
 	src/macro.c src/directive.c src/insn.c src/object.c src/buf_reader.c \
 	src/value.c src/conv.c src/isa_table.c test/stubs/agon_stubs.c)
 
-PROGS := $(patsubst test/progs/%.s,$(B)/test/%.bin,$(wildcard test/progs/*.s))
+PROGS := $(patsubst test/progs/%.s,$(B)/test/%.bin,$(wildcard test/progs/*.s)) \
+	$(B)/test/cclient.bin
+
+AGONDEV ?= $(HOME)/agondev
 
 .PHONY: all test clean FORCE
 
@@ -52,6 +55,27 @@ $(B)/test/%.bin: test/progs/%.s src/mos_api.inc src/hub.inc $(ZAP)
 	@mkdir -p $(B)/test
 	cp $< src/mos_api.inc src/hub.inc $(B)/test/
 	cd $(B)/test && $(ZAP) -c $*.s $*.bin > $*.log || { cat $*.log; exit 1; }
+
+# libhub.a: the C glue for include/hub.h, assembled by zap as an ELF object.
+$(B)/lib/libhub.a: lib/hub_glue.s src/hub.inc $(ZAP)
+	@mkdir -p $(B)/lib
+	cp lib/hub_glue.s src/hub.inc $(B)/lib/
+	cd $(B)/lib && $(ZAP) hub_glue.s hub_glue.o -f elf > hub_glue.log \
+		|| { cat hub_glue.log; exit 1; }
+	rm -f $@
+	$(AGONDEV)/bin/ez80-none-elf-ar rcs $@ $(B)/lib/hub_glue.o
+
+# cclient: a C client, built by agondev's own makefile in a staged tree,
+# since agondev takes its sources, headers and libraries from ./src,
+# ./include and ./lib.
+$(B)/test/cclient.bin: test/c/src/main.c include/hub.h $(B)/lib/libhub.a
+	@mkdir -p $(B)/cclient/src $(B)/cclient/include $(B)/cclient/lib $(B)/test
+	cp test/c/src/main.c $(B)/cclient/src/
+	cp include/hub.h $(B)/cclient/include/
+	cp $(B)/lib/libhub.a $(B)/cclient/lib/
+	PATH=$(AGONDEV)/bin:$$PATH $(MAKE) -s -C $(B)/cclient \
+		-f $(AGONDEV)/config/makefile.inc NAME=cclient LIBS=-lhub
+	cp $(B)/cclient/bin/cclient.bin $@
 
 test: all
 	test/run.sh

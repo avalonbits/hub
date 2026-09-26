@@ -22,7 +22,9 @@ Phase 1 adds the scheduler and the client API to the phase 0 shell.
   outlives a program.
 - **The API** is a header and jump table in the core, found through the
   Number variable `Hub$API`. `src/hub.inc` documents every call for zap
-  programs; `test/progs/client.s` is a worked example.
+  programs, with `test/progs/client.s` as a worked example. C programs
+  built with agondev use `include/hub.h` and link `libhub.a`
+  (`lib/hub_glue.s`, assembled by zap); `test/c/src/main.c` is the example.
 - **The shell** (`src/hub.s`) is a moslet at `0xB0000`: it installs the
   core, then reads lines for it -- from MOS's line editor with `CLI$Prompt`,
   or from a script with `hub -f <file>`. `exit` leaves hub.
@@ -33,8 +35,9 @@ Phase 1 adds the scheduler and the client API to the phase 0 shell.
     make test     # the emulator checks, and the controls that show each
                   # check fails without the feature it covers
 
-`ZAP_SRC` names zap's source tree (default `~/code/zap`); `AGON_EMU` the
-emulator release (default `~/fab-agon-emulator-1.2.4`).
+`ZAP_SRC` names zap's source tree (default `~/code/zap`); `AGONDEV` the
+agondev install used for the C client and `libhub.a` (default `~/agondev`);
+`AGON_EMU` the emulator release (default `~/fab-agon-emulator-1.2.4`).
 
 ## Install
 
