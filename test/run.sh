@@ -30,7 +30,7 @@ card() {
     mkdir -p "$sd/bin"
     cp "$1/hub.bin" "$sd/mos/"
     cp "$1/test/stomp.bin" "$sd/mos/"
-    for p in hello fail kbhook kbprobe leak fprobe; do
+    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client; do
         cp "$1/test/$p.bin" "$sd/bin/"
     done
 
@@ -47,9 +47,17 @@ card() {
         echo "Echo |<once> from Echo"
         for ((i = 0; i < ROUNDS; i++)); do echo "hello"; done
         echo "Echo rounds done"
-        echo "emulator_exit_success"
+        echo "vechook"
+        echo "vecprobe"
+        echo "client c"
+        echo "client o"
+        echo "client f"
     } > "$sd/script.txt"
-    printf 'hub -f /script.txt\r\n' > "$sd/autoexec.txt"
+
+    # The script ends by running out of lines, which leaves hub; the lines
+    # after it run at MOS's own prompt, with hub gone.
+    printf 'hub -f /script.txt\r\nclient c\r\nemulator_exit_success\r\n' \
+        > "$sd/autoexec.txt"
 
     echo "$sd"
 }
@@ -78,7 +86,7 @@ sd=$(card "$ROOT/build")
 out=$(run "$sd" 300)
 rm -rf "$sd"
 
-has "$out" "hub 0.0" && pass "hub starts" || fail "hub starts"
+has "$out" "hub 0.1" && pass "hub starts" || fail "hub starts"
 
 want=$((ROUNDS + 2))
 got=$(count "$out" "hello from a child")
@@ -105,6 +113,40 @@ grep -qx '<once> from Echo' <<< "$out" && pass "a line is expanded once, as at M
 has "$out" "rounds done" && pass "reached the end of the script" \
     || fail "reached the end of the script"
 
+has "$out" "vector: mos" && pass "a leftover interrupt handler is replaced" \
+    || fail "a leftover interrupt handler is replaced"
+
+# --- the scheduler ------------------------------------------------------------
+
+counts=$(grep -cE '^count [0-9]+$' <<< "$out")
+if [ "$counts" -eq 50 ] && has "$out" "count 50" && has "$out" "count done"; then
+    pass "a client chained to itself 50 times, keeping its count in a block"
+else
+    fail "a client chained to itself 50 times ($counts runs)"
+fi
+
+# Nesting: the inner frame's work, continuation included, comes before the
+# rest of the outer frame, and the outer continuation comes last.
+order=$(grep -xE 'outer|inner|inner-job|inner back|outer-second|outer back' <<< "$out" \
+    | tr '\n' ',')
+[ "$order" = "outer,inner,inner-job,inner back,outer-second,outer back," ] \
+    && pass "nested frames run in order" \
+    || fail "nested frames run in order: $order"
+
+if has "$out" "failed job 0, result 19" && ! has "$out" "SHOULD-NOT-RUN"; then
+    pass "a failed stop-on-error job skips to the continuation, which sees why"
+else
+    fail "a failed stop-on-error job skips to the continuation, which sees why"
+fi
+
+! has "$out" "hub refused a call" && pass "no API call was refused" \
+    || fail "no API call was refused"
+
+# After the script, hub has gone: the same client finds no API.
+tail_out=$(sed -n '/^outer back$/,$p' <<< "$out")
+has "$tail_out" "no hub" && pass "leaving hub withdraws Hub\$API" \
+    || fail "leaving hub withdraws Hub\$API"
+
 # --- controls: each check above must fail without its feature ---------------
 
 make -s -C "$ROOT" B=build/noguards GUARDS=0 >/dev/null || { echo "FAIL  build"; exit 1; }
@@ -116,6 +158,8 @@ has "$out" "kbvector: SET" && pass "control: without guards the hook stays" \
     || fail "control: without guards the hook stays"
 has "$out" "free handles: 5" && pass "control: without guards the files leak" \
     || fail "control: without guards the files leak"
+has "$out" "vector: user" && pass "control: without guards the handler stays" \
+    || fail "control: without guards the handler stays"
 
 make -s -C "$ROOT" B=build/norepair REPAIR=0 >/dev/null || { echo "FAIL  build"; exit 1; }
 sd=$(card "$ROOT/build/norepair")

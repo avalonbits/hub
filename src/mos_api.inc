@@ -9,7 +9,9 @@ mos_fgetc:              equ     $0C
 mos_feof:               equ     $0E
 mos_getError:           equ     $0F
 mos_oscli:              equ     $10
+mos_setintvector:       equ     $14
 mos_setkbvector:        equ     $1D
+mos_setvarval:          equ     $30
 mos_readvarval:         equ     $31
 
 ; mos_fopen modes (FatFS)

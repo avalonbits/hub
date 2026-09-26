@@ -6,15 +6,23 @@ this, then bring me back"), for state that outlives a program, and for
 cleaning up after programs that leave hooks or files behind. The design is in
 the "hub: a resident shell for the Agon" document.
 
-This is the phase 0 spike: the prompt loop, the guards, and the two-part
-layout.
+Phase 1 adds the scheduler and the client API to the phase 0 shell.
 
-- **The core** (`src/core.s`, ~430 bytes) runs from on-chip SRAM at
+- **The core** (`src/core.s`, ~1.4 KB) runs from on-chip SRAM at
   `0xB7F300`, above 12AM Commander's launcher, where nothing MOS loads can
   reach it. It runs each line as `Try <line>` through `OSCLI` -- MOS's own
-  prompt rules, expanded once -- then clears any keyboard hook, closes any
-  files left open, prints MOS's message for a failure, and reloads the shell
-  if a moslet loaded over it.
+  prompt rules, expanded once -- and after every command clears any keyboard
+  hook, closes files left open, restores interrupt handlers, prints MOS's
+  message for a failure, and reloads the shell if a moslet loaded over it.
+- **The scheduler.** Programs queue jobs through the API while they run:
+  `hub_enter` opens a frame, `hub_push` queues commands in it, and
+  `hub_return_to` sets the continuation that brings the program back.
+  Frames nest; a failed stop-on-error job skips to its frame's continuation,
+  which can ask what happened. `hub_block` hands out named memory that
+  outlives a program.
+- **The API** is a header and jump table in the core, found through the
+  Number variable `Hub$API`. `src/hub.inc` documents every call for zap
+  programs; `test/progs/client.s` is a worked example.
 - **The shell** (`src/hub.s`) is a moslet at `0xB0000`: it installs the
   core, then reads lines for it -- from MOS's line editor with `CLI$Prompt`,
   or from a script with `hub -f <file>`. `exit` leaves hub.

@@ -22,9 +22,6 @@
 
         jp      readline                ; SHELL_READLINE
 
-CORE_MAIN:      equ     CORE_BASE
-CORE_SUM:       equ     CORE_BASE + 4
-
 LINE_BUF:       equ     SHELL_VARS              ; 256
 PROMPT_BUF:     equ     SHELL_VARS + 256        ; 128
 SCRIPT_FH:      equ     SHELL_VARS + 384        ; 1
@@ -66,6 +63,8 @@ start:
         ld      c, 0
         ld      a, mos_readvarval
         rst.lil $08
+
+        call    CORE_INIT
 
         pop     hl
         call    parse_args
@@ -367,7 +366,7 @@ s_exit:         db      "exit", 0
 script_echo:    db      "hub> ", 0
 crlf:           db      13, 10, 0
 nlcr:           db      10, 13, 0
-msg_banner:     db      "hub 0.0 (phase 0 spike)", 13, 10, 0
+msg_banner:     db      "hub 0.1", 13, 10, 0
 msg_escape:     db      "Escape", 10, 13, 0
 msg_noscript:   db      "hub: cannot open the script", 13, 10, 0
 

@@ -15,7 +15,7 @@ GUARDS  ?= 1
 REPAIR  ?= 1
 
 ZAP     := $(abspath build/zap)
-CORE_MAX := 2816        # CTL_BASE - CORE_BASE: the core's code must end below its data
+CORE_MAX := 1664        # CTL_BASE - CORE_BASE: the core's code must end below its data
 
 ZAP_SRCS := $(addprefix $(ZAP_SRC)/, src/zap.c src/symtab.c src/scan.c src/expr.c \
 	src/macro.c src/directive.c src/insn.c src/object.c src/buf_reader.c \
@@ -38,8 +38,8 @@ $(B)/config.inc: FORCE
 	@printf 'GUARDS: equ %s\nREPAIR: equ %s\n' $(GUARDS) $(REPAIR) > $@.new
 	@cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
-$(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc $(B)/config.inc $(ZAP)
-	cp src/core.s src/mos_api.inc src/layout.inc $(B)/
+$(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/config.inc $(ZAP)
+	cp src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/
 	cd $(B) && $(ZAP) -c core.s core.bin > core.log || { cat core.log; exit 1; }
 	@size=$$(stat -c %s $@); if [ $$size -gt $(CORE_MAX) ]; then \
 		echo "core is $$size bytes; it must fit in $(CORE_MAX)"; rm -f $@; exit 1; fi
@@ -48,9 +48,9 @@ $(B)/hub.bin: src/hub.s src/mos_api.inc src/layout.inc $(B)/core.bin $(ZAP)
 	cp src/hub.s src/mos_api.inc src/layout.inc $(B)/
 	cd $(B) && $(ZAP) -c hub.s hub.bin > hub.log || { cat hub.log; exit 1; }
 
-$(B)/test/%.bin: test/progs/%.s src/mos_api.inc $(ZAP)
+$(B)/test/%.bin: test/progs/%.s src/mos_api.inc src/hub.inc $(ZAP)
 	@mkdir -p $(B)/test
-	cp $< src/mos_api.inc $(B)/test/
+	cp $< src/mos_api.inc src/hub.inc $(B)/test/
 	cd $(B)/test && $(ZAP) -c $*.s $*.bin > $*.log || { cat $*.log; exit 1; }
 
 test: all
