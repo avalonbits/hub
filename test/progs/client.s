@@ -20,6 +20,10 @@
 ;   r   Open a frame with "reset" (which resets the machine), then
 ;       "Echo NOT-AFTER-RESET", and the continuation "client R".
 ;   R   Print whether the frame was cut short by a reset, and how.
+;   t   Run the rest of the argument as a command, stop-on-error, then
+;       "Echo NOT-AFTER-TOOL", with the continuation "client T" -- a tool
+;       run as an editor would run it.
+;   T   Print the result the tool's frame ended with, and the failed job.
 ;
 ; Without hub it prints "no hub" and returns.
 
@@ -70,6 +74,10 @@ start:
         jp      z, resetting
         cp      a, 'R'
         jp      z, reset_back
+        cp      a, 't'
+        jp      z, tool
+        cp      a, 'T'
+        jp      z, tool_back
 
 finish:
         pop     iy
@@ -261,6 +269,42 @@ reset_back:
         call    newline
         jp      finish
 
+tool:
+        inc     hl
+        call    skip_spaces
+        push    hl
+        ld      hl, tag_tool
+        ld      a, HUB_ENTER
+        call    hub
+        pop     hl
+        ld      c, HUB_STOP_ON_ERROR
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_not_after_tool
+        ld      c, 0
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_tool_back
+        ld      a, HUB_RETURN_TO
+        call    hub
+        jp      finish
+
+tool_back:
+        ld      hl, msg_tool
+        call    print
+        ld      a, HUB_LAST_RESULT
+        call    hub
+        ld      a, l
+        call    print_u8
+        ld      hl, msg_failed_job2
+        call    print
+        ld      a, HUB_FAILED_JOB
+        call    hub
+        ld      a, l
+        call    print_u8
+        call    newline
+        jp      finish
+
 ; find_hub: carry set if hub is running and its header is one we know, with
 ; the header's address in (api).
 find_hub:
@@ -404,6 +448,10 @@ cmd_not_run:    db      "Echo SHOULD-NOT-RUN", 0
 cmd_failed:     db      "client F", 0
 msg_nohub:      db      "no hub", 13, 10, 0
 tag_keep:       db      "KEEP"
+tag_tool:       db      "TOOL"
+cmd_not_after_tool: db  "Echo NOT-AFTER-TOOL", 0
+cmd_tool_back:  db      "client T", 0
+msg_tool:       db      "tool result ", 0
 tag_rst:        db      "RST "
 cmd_bigmos:     db      "bigmos", 0
 cmd_reset:      db      "reset", 0

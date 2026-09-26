@@ -16,6 +16,11 @@ EMU=${AGON_EMU:-$HOME/fab-agon-emulator-1.2.4}
 MOS=$EMU/firmware/mos_platform.bin     # MOS 3.0.2
 ROUNDS=${ROUNDS:-100}
 
+# zap and acc built for the Agon, with -e and -errors: the tools an editor
+# under hub runs. Their checks are skipped when a build isn't there.
+ZAP_BIN=${ZAP_BIN:-$HOME/code/zap/bin/zap.bin}
+ACC_BIN=${ACC_BIN:-$HOME/code/acc/bin/acc.bin}
+
 status=0
 
 pass() { echo "PASS  $1"; }
@@ -33,6 +38,10 @@ card() {
     for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient reset; do
         cp "$1/test/$p.bin" "$sd/bin/"
     done
+    [ -f "$ZAP_BIN" ] && cp "$ZAP_BIN" "$sd/bin/zap.bin"
+    [ -f "$ACC_BIN" ] && cp "$ACC_BIN" "$sd/bin/acc.bin"
+    printf '  nop\r\n  frob a\r\n' > "$sd/bad.s"
+    printf 'int main(void)\r\n{\r\n    return x;\r\n}\r\n' > "$sd/bad.c"
 
     {
         echo "# phase 0 spike"
@@ -64,6 +73,10 @@ card() {
         echo "client r"
         echo "Echo after-reset"
         echo "cclient"
+        echo "client t zap /bad.s /bad.bin -c -e /zap.err"
+        echo "Type /zap.err"
+        echo "client t acc /bad.c -o /bad2.bin -errors /acc.err"
+        echo "Type /acc.err"
     } > "$sd/script.txt"
 
     # The script ends by running out of lines, which leaves hub; the lines
@@ -219,6 +232,29 @@ if has "$out" "resumed after a reset" \
 else
     fail "after a reset, hub resumes: the frame's continuation runs"
 fi
+
+# --- the tools, as an editor under hub runs them -------------------------------
+
+# A failed tool returns 100 with -e / -errors, which MOS passes back
+# unchanged -- not 0, and not rewritten to "Invalid command" -- so the frame
+# stops, its continuation sees 100, and the error is in the file on the card.
+tool_check() {
+    local name=$1 bin=$2 errfile=$3 want=$4
+    if [ ! -f "$bin" ]; then
+        echo "SKIP  $name: no Agon build at $bin"
+        return
+    fi
+    local after
+    after=$(grep -A 12 "^hub> client t $name " <<< "$out")
+    if has "$after" "tool result 100, failed job 0" \
+       && ! has "$after" "NOT-AFTER-TOOL" && has "$after" "$want"; then
+        pass "$name under hub: fails with 100, and the error is in $errfile"
+    else
+        fail "$name under hub: fails with 100, and the error is in $errfile"
+    fi
+}
+tool_check zap "$ZAP_BIN" /zap.err "/bad.s:2:3: error: unknown instruction 'frob'"
+tool_check acc "$ACC_BIN" /acc.err "/bad.c:3:0: error:"
 
 ! has "$out" "hub refused a call" && pass "no API call was refused" \
     || fail "no API call was refused"
