@@ -100,6 +100,14 @@ rm -rf "$sd"
 
 has "$out" "hub 0.2" && pass "hub starts" || fail "hub starts"
 
+# Starting must leave the shell as it was loaded: nothing may write into its
+# code -- a command run through OSCLI from a string in the shell did, since
+# mos_exec edits the command it is given -- or the core "repairs" a shell no
+# moslet touched, and reloads it before the first line.
+start=$(sed -n '/^hub 0.2$/,/^hub> /p' <<< "$out")
+! has "$start" "hub: shell reloaded" && pass "starting leaves the shell intact" \
+    || fail "starting leaves the shell intact"
+
 want=$((ROUNDS + 2))
 got=$(count "$out" "hello from a child")
 [ "$got" -eq "$want" ] && pass "every child ran and returned ($got)" \

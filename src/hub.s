@@ -220,10 +220,7 @@ publish_api:
 ; that no longer answers.
 withdraw_api:
         ld      hl, unset_api
-        ld      a, mos_oscli
-        rst.lil $08
-
-        ret
+        jr      oscli_copy
 
 ; bind_f12: F12 brings hub back if the user ever ends up at MOS's own prompt
 ; -- after `exit`, or a boot with Shift held -- with its queue and blocks
@@ -234,6 +231,24 @@ bind_f12:
         call    var_exists
         ret     z
         ld      hl, set_hotkey
+
+; oscli_copy: run the command at HL through OSCLI, from a copy in LINE_BUF.
+;
+; Never from the string itself: mos_exec writes into the command it is given
+; (mos_trim puts NULs in it), and these strings are part of the shell's code,
+; which the core checksums. Run in place, a command quietly changes the code,
+; and the core then "repairs" a shell nothing overwrote.
+oscli_copy:
+        ld      de, LINE_BUF
+
+@copy:
+        ld      a, (hl)
+        ld      (de), a
+        inc     hl
+        inc     de
+        or      a, a
+        jr      nz, @copy
+        ld      hl, LINE_BUF
         ld      a, mos_oscli
         rst.lil $08
 
