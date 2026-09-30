@@ -24,6 +24,17 @@
 ;       "Echo NOT-AFTER-TOOL", with the continuation "client T" -- a tool
 ;       run as an editor would run it.
 ;   T   Print the result the tool's frame ended with, and the failed job.
+;   p   Open a frame whose only job is the continuation "client q", so that
+;       q runs as a job, as an IDE resumed by its continuation does.
+;   q   Open a frame with seven jobs, "Echo q1" to "Echo q7", and the
+;       continuation "client Q": all MAX_JOBS slots, while q itself runs as a
+;       job.
+;   Q   Print "queue back".
+;   u   Note screen mode 1 in MOS's sysvars, as an IDE that changed the mode
+;       would leave it, then open a frame with "fail" as a user program that
+;       pauses after (HUB_USER_PROGRAM | HUB_PAUSE_AFTER, not stop on error),
+;       and the continuation "client U".
+;   U   Print the frame's last result and failed job.
 ;
 ; Without hub it prints "no hub" and returns.
 
@@ -78,6 +89,16 @@ start:
         jp      z, tool
         cp      a, 'T'
         jp      z, tool_back
+        cp      a, 'p'
+        jp      z, queue_pre
+        cp      a, 'q'
+        jp      z, queue_full
+        cp      a, 'Q'
+        jp      z, queue_back
+        cp      a, 'u'
+        jp      z, user_prog
+        cp      a, 'U'
+        jp      z, user_back
 
 finish:
         pop     iy
@@ -305,6 +326,76 @@ tool_back:
         call    newline
         jp      finish
 
+queue_pre:
+        ld      hl, tag_queue
+        ld      a, HUB_ENTER
+        call    hub
+        ld      hl, cmd_queue_full
+        ld      a, HUB_RETURN_TO
+        call    hub
+        jp      finish
+
+queue_full:
+        ld      hl, tag_queue
+        ld      a, HUB_ENTER
+        call    hub
+        ld      b, '1'
+
+@push:
+        push    bc
+        ld      a, b
+        ld      (cmd_q_digit), a
+        ld      hl, cmd_q
+        ld      c, 0
+        ld      a, HUB_PUSH
+        call    hub
+        pop     bc
+        inc     b
+        ld      a, b
+        cp      a, '8'
+        jr      nz, @push
+        ld      hl, cmd_queue_back
+        ld      a, HUB_RETURN_TO
+        call    hub
+        jp      finish
+
+queue_back:
+        ld      hl, msg_queue_back
+        call    print
+        jp      finish
+
+user_prog:
+        ld      a, mos_sysvars
+        rst.lil $08
+        ld      (ix+sysvar_scrMode), 1
+        ld      hl, tag_user
+        ld      a, HUB_ENTER
+        call    hub
+        ld      hl, cmd_fail
+        ld      c, HUB_USER_PROGRAM | HUB_PAUSE_AFTER
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_user_back
+        ld      a, HUB_RETURN_TO
+        call    hub
+        jp      finish
+
+user_back:
+        ld      hl, msg_user_back
+        call    print
+        ld      a, HUB_LAST_RESULT
+        call    hub
+        ld      a, l
+        call    print_u8
+        ld      hl, msg_failed_job2
+        call    print
+        ld      a, HUB_FAILED_JOB
+        call    hub
+        ld      a, l
+        call    print_u8
+        call    newline
+        jp      finish
+
 ; find_hub: carry set if hub is running and its header is one we know, with
 ; the header's address in (api).
 find_hub:
@@ -464,6 +555,15 @@ msg_resumed:    db      "resumed ", 0
 msg_failed_job2: db     ", failed job ", 0
 msg_refused:    db      "hub refused a call: ", 0
 msg_count:      db      "count ", 0
+tag_queue:      db      "QUE "
+cmd_queue_full: db      "client q", 0
+cmd_queue_back: db      "client Q", 0
+cmd_q:          db      "Echo q"
+cmd_q_digit:    db      "0", 0
+msg_queue_back: db      "queue back", 13, 10, 0
+tag_user:       db      "USER"
+cmd_user_back:  db      "client U", 0
+msg_user_back:  db      "user back: last ", 0
 msg_count_done: db      "count done", 13, 10, 0
 msg_outer:      db      "outer", 13, 10, 0
 msg_inner:      db      "inner", 13, 10, 0

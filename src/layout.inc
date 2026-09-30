@@ -20,9 +20,11 @@ CORE_SUM:       equ     CORE_BASE + 4   ; checksum the shell's code
 CORE_INIT:      equ     CORE_BASE + 8   ; A = 0 fresh, 1 resuming after a reset
 HUB_HEADER:     equ     CORE_BASE + 12  ; the client API: see hub.inc
 
-; The shell's entry point the core calls, at a fixed place after the MOS
-; header so a reloaded shell answers at the same address.
+; The shell's entry points the core calls, at fixed places after the MOS
+; header so a reloaded shell answers at the same addresses.
 SHELL_READLINE: equ     SHELL_BASE + $48 ; returns HL = line, or 0 to leave hub
+SHELL_JOB_START: equ    SHELL_BASE + $4C ; A = a job's flags, before it runs
+SHELL_JOB_END:  equ     SHELL_BASE + $50 ; A = its flags, after it has run
 
 ; ---------------------------------------------------------------------------
 ; Control block. It is not part of the core's image, so copying the core in
@@ -48,7 +50,7 @@ CTL_NJOBS:      equ     CTL_BASE + 408  ; jobs in the array
 CTL_NEXT:       equ     CTL_BASE + 409  ; index of the next job to run
 CTL_INSERT:     equ     CTL_BASE + 410  ; where hub_push puts the next job
 CTL_DEPTH:      equ     CTL_BASE + 411  ; open frames
-CTL_JOB:        equ     CTL_BASE + 412  ; index of the running job, or $FF
+CTL_JOB:        equ     CTL_BASE + 412  ; 0 while a job runs (CTL_RUNNING), or $FF
 CTL_VEC_P:      equ     CTL_BASE + 413  ; vector loop pointer (3)
 
 ; The frame whose continuation is running: its first FRAME_DONE bytes,
@@ -82,14 +84,22 @@ JOB_INDEX:      equ     2               ; its position in that frame
 JOB_RESULT:     equ     3               ; (3)
 JOB_CMD:        equ     6               ; the command, zero-terminated
 JOB_CMD_MAX:    equ     JOB_SIZE - JOB_CMD - 1
-MAX_JOBS:       equ     8
+MAX_JOBS:       equ     8               ; HUB_MAX_JOBS in hub.inc and hub.h
 
 ; Scratch for the API calls, which may not keep anything on the caller's
 ; stack between the MOS-free steps of a call.
 CTL_PUSH_CMD:   equ     CTL_JOBS + MAX_JOBS * JOB_SIZE  ; command or tag (3)
 CTL_PUSH_FLAGS: equ     CTL_PUSH_CMD + 3                ; flags for the job
 
-CTL_END:        equ     CTL_PUSH_FLAGS + 1
+; The running job's header -- flags, frame, index, result -- laid out as a
+; job's, so the same offsets reach it. A job leaves the queue when it starts,
+; which frees its slot for the jobs it pushes.
+CTL_RUNNING:    equ     CTL_PUSH_FLAGS + 1                ; JOB_CMD bytes
+
+; The screen mode at hub's prompt, which a HUB_USER_PROGRAM job starts in.
+CTL_SCRMODE:    equ     CTL_RUNNING + JOB_CMD             ; 1
+
+CTL_END:        equ     CTL_SCRMODE + 1
 
 CMD_MAX:        equ     255             ; longest line accepted, without "Try "
 NVECTORS:       equ     48              ; MOS's interrupt vectors, numbered 0, 2, ... $5E

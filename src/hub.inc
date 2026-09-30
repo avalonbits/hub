@@ -39,7 +39,9 @@ HUB_ENTER:      equ     6
 ; hub_push         HL = command, as typed at the prompt; C = flags
 ;                  Queues it in the open frame, after anything already pushed.
 ;                  A = 1 with no open frame, 2 if the queue is full,
-;                  3 if the command is too long (HUB_CMD_MAX).
+;                  3 if the command is too long (HUB_CMD_MAX). The queue
+;                  holds HUB_MAX_JOBS jobs waiting to run, continuations
+;                  included; the job that is running doesn't take a slot.
 HUB_PUSH:       equ     10
 
 ; hub_return_to    HL = command
@@ -77,8 +79,16 @@ HUB_RESULT_RESET:       equ     255     ; the result of a job a reset cut short
 ; Flags for hub_push.
 HUB_STOP_ON_ERROR:      equ     $01     ; a non-zero result skips the rest of the
                                         ; frame's jobs, up to its continuation
-HUB_USER_PROGRAM:       equ     $02     ; reserved: reset the screen first
-HUB_PAUSE_AFTER:        equ     $04     ; reserved: "press a key" afterwards
+HUB_USER_PROGRAM:       equ     $02     ; start with the screen as it was at
+                                        ; hub's prompt: its mode (clearing
+                                        ; it), colours, viewports, the
+                                        ; system font, the cursor shown and
+                                        ; its behaviour reset. (Since 0.3.)
+HUB_PAUSE_AFTER:        equ     $04     ; afterwards, worked or not, "Press a
+                                        ; key to return" and wait for one --
+                                        ; unless the variable Hub$NoPause is
+                                        ; set, as for tests. (Since 0.3.)
 HUB_CONTINUATION:       equ     $80     ; set by hub_return_to; not for hub_push
 
 HUB_CMD_MAX:    equ     93              ; longest command a job can hold
+HUB_MAX_JOBS:   equ     8               ; jobs the queue holds

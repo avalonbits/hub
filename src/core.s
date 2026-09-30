@@ -60,8 +60,10 @@
 ;                               after a reset
 ;   CORE_BASE + 12  the client API header and its jump table (see hub.inc)
 ;
-; The core calls back into the shell at one fixed address, SHELL_READLINE,
-; which returns the next line to run (or HL = 0 to leave hub).
+; The core calls back into the shell at fixed addresses: SHELL_READLINE,
+; and SHELL_JOB_START and SHELL_JOB_END around a job with HUB_USER_PROGRAM
+; or HUB_PAUSE_AFTER set. SHELL_READLINE returns the next line to run (or
+; HL = 0 to leave hub).
 ;
 ; CALLING MOS
 ;
@@ -115,7 +117,7 @@
 api_header:
         db      "HUB"                   ; HUB_MAGIC
         db      0                       ; HUB_MAJOR
-        db      2                       ; HUB_MINOR
+        db      3                       ; HUB_MINOR
         db      8                       ; HUB_COUNT
         jp      api_enter               ; HUB_ENTER
         jp      api_push                ; HUB_PUSH
@@ -185,7 +187,7 @@ settle_reset:
         ld      a, (CTL_JOB)
         cp      a, $ff
         jr      z, @none
-        call    job_addr
+        ld      ix, CTL_RUNNING
         ld      hl, RESULT_RESET
         ld      (ix+JOB_RESULT), hl
         bit     7, (ix+JOB_FLAGS)       ; HUB_CONTINUATION
@@ -331,8 +333,11 @@ build_cmd:
 ; Programs queue jobs through the API while they run; the core runs them once
 ; the program has returned. The pieces:
 ;
-;   Job           a command, as typed at the prompt, with flags. Jobs live in
-;                 an array (CTL_JOBS) and run in array order from CTL_NEXT.
+;   Job           a command, as typed at the prompt, with flags. Jobs wait in
+;                 an array (CTL_JOBS) and run from its front. A job leaves
+;                 the array as it starts (its header to CTL_RUNNING, its
+;                 command to CTL_CMD), so the MAX_JOBS slots are all free for
+;                 what it pushes.
 ;   Frame         one program's group of jobs, opened by hub_enter(tag) and
 ;                 ended by its continuation. Frames nest: a job that is itself
 ;                 a hub client opens a frame inside its caller's.
@@ -341,7 +346,7 @@ build_cmd:
 ;                 always runs, even when a job before it failed.
 ;
 ; Ordering. A frame's jobs are inserted at CTL_INSERT, which next_job sets to
-; just after the running job. So a nested frame's jobs run before whatever the
+; the front of the array: just after the running job. So a nested frame's jobs run before whatever the
 ; outer frame queued after the job that opened it, which is what nesting
 ; means: the IDE runs a debugger, the debugger runs the program and comes back
 ; to itself, and only then does the IDE's own continuation run.
@@ -370,53 +375,34 @@ build_cmd:
 ;       case the queue and frames have been reset. Clobbers everything.
 ; ----------------------------------------------------------------------------
 next_job:
-        ld      a, (CTL_NJOBS)
-        ld      c, a
         ld      a, (CTL_NEXT)
-        cp      a, c
-        jr      c, @have
+        call    drop_jobs               ; the jobs a failure skipped
+        ld      a, (CTL_NJOBS)
+        or      a, a
+        jr      nz, @take
 
-        xor     a, a                    ; drained: start again from empty
-        ld      (CTL_NJOBS), a
-        ld      (CTL_NEXT), a
-        ld      (CTL_INSERT), a
+        ld      (CTL_INSERT), a         ; drained: start again from empty
         ld      (CTL_DEPTH), a
 
-        ret                             ; carry clear from the xor
+        ret                             ; carry clear from the or
 
-; Drop the jobs that have finished by moving the rest to the front of the
-; array. Without this, a program that chains to itself adds a job per run
-; and fills the queue after MAX_JOBS runs, though only one job is ever
-; waiting.
-@have:
-        or      a, a
-        jr      z, @take                ; nothing has finished
-        ld      c, a
-        ld      a, (CTL_NJOBS)
-        sub     a, c
-        ld      (CTL_NJOBS), a          ; the jobs still waiting
-        ld      hl, 0
-        ld      l, a
-        ld      h, JOB_SIZE
-        mlt     hl
-        push    hl                      ; bytes to move
-        ld      a, c
-        call    job_addr
-        lea     hl, ix+0                ; from the first waiting job
-        ld      de, CTL_JOBS            ; to the start
-        pop     bc
-        ldir
-        xor     a, a
-        ld      (CTL_NEXT), a
-
+; The job leaves the queue as it starts: its header goes to CTL_RUNNING and
+; its command to CTL_CMD, so its slot is free for the jobs it pushes. A
+; program run as a job -- a continuation, usually -- has the whole queue to
+; itself.
 @take:
-        ld      (CTL_JOB), a
-        inc     a
-        ld      (CTL_NEXT), a
+        ld      hl, CTL_JOBS
+        ld      de, CTL_RUNNING
+        ld      bc, JOB_CMD
+        ldir                            ; HL = the job's command
+        call    build_cmd               ; can't fail: hub_push checked the length
+        ld      a, 1
+        call    drop_jobs
+        xor     a, a
         ld      (CTL_INSERT), a         ; a frame this job opens goes next
+        ld      (CTL_JOB), a            ; running
 
-        ld      a, (CTL_JOB)
-        call    job_addr                ; IX = the job
+        ld      ix, CTL_RUNNING
         bit     7, (ix+JOB_FLAGS)       ; HUB_CONTINUATION
         jr      nz, @closing
         call    clear_done              ; an ordinary job sees no results
@@ -426,14 +412,23 @@ next_job:
         ld      a, (ix+JOB_FRAME)
         call    close_frame
 
+; The shell does what HUB_USER_PROGRAM and HUB_PAUSE_AFTER ask, before and
+; after the job. Before, it is intact: core_main checked it. After, the job
+; may have been a moslet, so it is checked again first.
 @run:
-        lea     hl, ix+JOB_CMD
-        call    build_cmd               ; can't fail: hub_push checked the length
+        ld      a, (ix+JOB_FLAGS)
+        and     a, HUB_USER_PROGRAM | HUB_PAUSE_AFTER
+        call    nz, SHELL_JOB_START
         call    run_cmd
+        ld      a, (CTL_RUNNING+JOB_FLAGS)
+        and     a, HUB_USER_PROGRAM | HUB_PAUSE_AFTER
+        jr      z, @ran
+        call    check_shell
+        ld      a, (CTL_RUNNING+JOB_FLAGS)
+        call    SHELL_JOB_END
 
-; run_cmd clobbered IX along with everything else; find the job again.
-        ld      a, (CTL_JOB)
-        call    job_addr
+@ran:
+        ld      ix, CTL_RUNNING
         ld      hl, (CTL_RC)
         ld      (ix+JOB_RESULT), hl
         bit     7, (ix+JOB_FLAGS)
@@ -456,6 +451,40 @@ next_job:
         ld      a, $ff
         ld      (CTL_JOB), a
         scf
+
+        ret
+
+; ----------------------------------------------------------------------------
+; drop_jobs: drop the first A jobs, moving the rest to the front of the array.
+;
+; In:   A = how many, at most CTL_NJOBS.
+; Out:  CTL_NEXT = 0. Clobbers A, BC, DE, HL, IX.
+; ----------------------------------------------------------------------------
+drop_jobs:
+        or      a, a
+        ret     z
+        ld      c, a
+        ld      a, (CTL_NJOBS)
+        sub     a, c
+        ld      (CTL_NJOBS), a          ; the jobs still waiting
+        ld      hl, 0
+        ld      l, a
+        ld      h, JOB_SIZE
+        mlt     hl                      ; bytes to move
+        ld      a, h
+        or      a, l
+        jr      z, @moved               ; none: LDIR would move 16 MB
+        push    hl
+        ld      a, c
+        call    job_addr
+        lea     hl, ix+0                ; from the first job kept
+        ld      de, CTL_JOBS            ; to the start
+        pop     bc
+        ldir
+
+@moved:
+        xor     a, a
+        ld      (CTL_NEXT), a
 
         ret
 

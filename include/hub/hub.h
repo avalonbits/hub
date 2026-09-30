@@ -32,10 +32,18 @@
 /* Flags for hub_push. */
 #define HUB_STOP_ON_ERROR   0x01    /* a non-zero result skips the rest of the
                                        frame's jobs, up to its continuation */
-#define HUB_USER_PROGRAM    0x02    /* reserved: reset the screen first */
-#define HUB_PAUSE_AFTER     0x04    /* reserved: "press a key" afterwards */
+#define HUB_USER_PROGRAM    0x02    /* start with the screen as hub's prompt
+                                       had it: its mode (cleared), colours,
+                                       viewports, the system font, the cursor
+                                       shown. Needs hub 0.3. */
+#define HUB_PAUSE_AFTER     0x04    /* afterwards, worked or not: "Press a key
+                                       to return", and wait for one -- unless
+                                       the variable Hub$NoPause is set, as for
+                                       tests. Needs hub 0.3. */
 
 #define HUB_CMD_MAX         93      /* longest command a job can hold */
+#define HUB_MAX_JOBS        8       /* jobs waiting, continuations included;
+                                       the running job doesn't count */
 #define HUB_RESULT_RESET    255     /* the result of a job a reset cut short */
 
 /* Status codes. */

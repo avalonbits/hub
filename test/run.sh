@@ -40,7 +40,7 @@ card() {
     mkdir -p "$sd/bin"
     cp "$1/hub.bin" "$sd/mos/"
     cp "$1/test/stomp.bin" "$1/test/bigmos.bin" "$sd/mos/"
-    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient cclienta reset; do
+    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient cclienta reset scrmode; do
         cp "$1/test/$p.bin" "$sd/bin/"
     done
     [ -f "$ZAP_BIN" ] && cp "$ZAP_BIN" "$sd/bin/zap.bin"
@@ -79,6 +79,10 @@ card() {
         echo "Echo after-reset"
         echo "cclient"
         echo "cclienta"
+        echo "client p"
+        echo "Set Hub\$NoPause 1"
+        echo "scrmode 3"
+        echo "client u"
         echo "client t zap /bad.s /bad.bin -c -e /zap.err"
         echo "Type /zap.err"
         echo "client t acc /bad.c -o /bad2.bin -errors /acc.err"
@@ -196,6 +200,39 @@ client_check() {
 client_check cclient agondev
 client_check cclienta acc
 
+# A program run as a job -- here a continuation, as an IDE is after its
+# first build -- has all MAX_JOBS slots: the running job left the queue
+# when it started. Before, it kept its slot, and the eighth push was
+# refused.
+if has "$out" "q7" && has "$out" "queue back"; then
+    pass "a job can push MAX_JOBS jobs: its own slot is free"
+else
+    fail "a job can push MAX_JOBS jobs: its own slot is free"
+fi
+
+# HUB_USER_PROGRAM | HUB_PAUSE_AFTER. The stand-in VDP logs the VDU commands
+# it doesn't draw, so the reset can be read off the console: cursor
+# behaviour, the system font, then the mode -- 3, the mode at hub's prompt,
+# not the 1 the client left -- and the cursor on, all before the job. Then
+# the job, which fails, then the pause (Hub$NoPause is set, so it doesn't
+# wait), and the continuation still sees the job's result and no failed job.
+user=$(sed -n '/^hub> client u$/,/^user back/p' <<< "$out")
+want='unknown packet VDU 0x17, 0x10
+unknown packet VDU 0x17, 0, 0x95
+Unknown packet VDU 0x16
+Unknown packet VDU 0x3
+unknown packet VDU 0x17, 0x1
+failing on purpose
+Press a key to return
+user back: last 19, failed job 255'
+got=$(grep -aoE '[Uu]nknown packet VDU.*|failing on purpose|Press a key to return|user back.*' <<< "$user")
+if [ "$got" = "$want" ]; then
+    pass "a user program gets the prompt's screen, and a pause after"
+else
+    fail "a user program gets the prompt's screen, and a pause after"
+    printf '%s\n' "$got" | sed 's/^/      /'
+fi
+
 ! has "$out" "a long command was accepted" \
     && pass "hub_push refuses a command longer than HUB_CMD_MAX" \
     || fail "hub_push refuses a command longer than HUB_CMD_MAX"
@@ -277,6 +314,20 @@ has "$tail_out" "no hub" && pass "leaving hub withdraws Hub\$API" \
     || fail "leaving hub withdraws Hub\$API"
 has "$tail_out" "cclient: no hub" && pass "hub_present() is false without hub" \
     || fail "hub_present() is false without hub"
+
+# --- the pause waits ----------------------------------------------------------
+
+# Without Hub$NoPause, the pause waits for a key that never comes: the job
+# ran and the message is there, but the continuation never runs.
+sd=$(card "$ROOT/build")
+printf 'client u\r\n' > "$sd/script.txt"
+out=$(run "$sd" 30)
+rm -rf "$sd"
+if has "$out" "Press a key to return" && ! has "$out" "user back"; then
+    pass "HUB_PAUSE_AFTER waits for a key"
+else
+    fail "HUB_PAUSE_AFTER waits for a key"
+fi
 
 # --- the release, as a card gets it -------------------------------------------
 

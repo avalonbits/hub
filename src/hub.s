@@ -24,6 +24,8 @@
         blkb    3, 0
 
         jp      readline                ; SHELL_READLINE
+        jp      job_start               ; SHELL_JOB_START
+        jp      job_end                 ; SHELL_JOB_END
 
 LINE_BUF:       equ     SHELL_VARS              ; 256
 PROMPT_BUF:     equ     SHELL_VARS + 256        ; 128
@@ -343,7 +345,16 @@ parse_args:
         ret
 
 ; readline: HL = the next line to run, or 0 to leave hub.
+;
+; The screen mode is noted first: it is the one the user has at hub's
+; prompt, which a HUB_USER_PROGRAM job starts in whatever the program that
+; queued it did to the screen.
 readline:
+        ld      a, mos_sysvars
+        rst.lil $08
+        ld      a, (ix+sysvar_scrMode)
+        ld      (CTL_SCRMODE), a
+
         ld      a, (CTL_MODE)
         or      a, a
         jr      nz, script_line
@@ -474,6 +485,57 @@ builtin:
         ld      hl, 0
 
         ret
+
+; job_start: A = the flags of the job about to run; the core calls this only
+; when one of HUB_USER_PROGRAM and HUB_PAUSE_AFTER is set.
+;
+; HUB_USER_PROGRAM: hand the screen over as hub's prompt had it, whatever
+; the program that queued the job did to it -- an IDE's colours, layout,
+; font, cursor and mode. In order: VDU 23,16,0,0 puts the cursor behaviour
+; back to its defaults (scroll protection off among them); VDU 23,0,&95
+; selects the system font (65535); VDU 22 sets the prompt's mode, which
+; also resets the viewports, colours and palette and clears the screen; and
+; VDU 23,1,1 shows the cursor.
+job_start:
+        bit     1, a                    ; HUB_USER_PROGRAM
+        ret     z
+
+        ld      hl, vdu_reset
+        ld      bc, vdu_reset_mode - vdu_reset
+        xor     a, a
+        rst.lil $18
+        ld      a, (CTL_SCRMODE)
+        rst.lil $10
+        ld      hl, vdu_reset_end - 3
+        ld      bc, 3
+        xor     a, a
+        rst.lil $18
+
+        ret
+
+; job_end: A = the flags of the job that has just run; called, like
+; job_start, only when one of the two is set, and after the core has
+; repaired the shell if the job was a moslet.
+;
+; HUB_PAUSE_AFTER: "Press a key to return", then wait for one, so the
+; program's output can be read before whatever runs next draws over it --
+; whether the job worked or not. With the variable Hub$NoPause set, as a
+; test sets it, the message is printed and nothing waits.
+job_end:
+        bit     2, a                    ; HUB_PAUSE_AFTER
+        ret     z
+
+        ld      hl, msg_pause
+        call    print
+        ld      hl, v_nopause
+        call    var_exists
+        jr      z, @go
+        ld      a, mos_getkey
+        rst.lil $08
+
+@go:
+        ld      hl, crlf
+        jp      print
 
 ; read_line: the next line of the script into LINE_BUF, without its CR/LF.
 ; Carry set if the file had nothing left.
@@ -610,6 +672,14 @@ set_hotkey:     db      "Hotkey 12 hub", 0
 blk_ext:        db      ".blk", 0
 msg_escape:     db      "Escape", 10, 13, 0
 msg_noscript:   db      "hub: cannot open the script", 13, 10, 0
+msg_pause:      db      13, 10, "Press a key to return", 0
+v_nopause:      db      "Hub$NoPause", 0
+vdu_reset:      db      23, 16, 0, 0            ; cursor behaviour: defaults
+                db      23, 0, $95, 0, $ff, $ff, 0  ; the system font
+                db      22                      ; + the mode, sent separately
+vdu_reset_mode:
+                db      23, 1, 1                ; the cursor on
+vdu_reset_end:
 
 core_image:
         INCBIN  "core.bin"

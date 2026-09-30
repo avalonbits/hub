@@ -19,7 +19,12 @@ Phase 2 adds repair and recovery to the phase 1 scheduler.
   `hub_return_to` sets the continuation that brings the program back.
   Frames nest; a failed stop-on-error job skips to its frame's continuation,
   which can ask what happened. `hub_block` hands out named memory that
-  outlives a program.
+  outlives a program. A job pushed with `HUB_USER_PROGRAM` starts on the
+  screen hub's prompt had -- its mode, colours, font and cursor -- whatever
+  the program that queued it did to it; one with `HUB_PAUSE_AFTER` ends
+  with "Press a key to return" (set `Hub$NoPause` to print it without
+  waiting, as tests do). The queue holds eight jobs waiting to run; the one
+  running doesn't take a slot.
 - **Repair and recovery.** A moslet loads over the shell and, if it is big
   enough (nano is 6.5 KB), over the client blocks. The core saves the blocks
   to `hub.blk` next to `hub.bin` whenever they change, and after a moslet
