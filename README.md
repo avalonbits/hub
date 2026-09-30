@@ -33,8 +33,9 @@ Phase 2 adds repair and recovery to the phase 1 scheduler.
 - **The API** is a header and jump table in the core, found through the
   Number variable `Hub$API`. `src/hub.inc` documents every call for zap
   programs, with `test/progs/client.s` as a worked example. C programs
-  built with agondev use `include/hub.h` and link `libhub.a`
-  (`lib/hub_glue.s`, assembled by zap); `test/c/src/main.c` is the example.
+  include `<hub/hub.h>` and link `libhub.a` (`lib/hub_glue.s`, assembled
+  by zap as an ELF archive for agondev and an ACC one for acc);
+  `test/c/src/main.c` is the example.
 - **The shell** (`src/hub.s`) is a moslet at `0xB0000`: it installs the
   core, then reads lines for it -- from MOS's line editor with `CLI$Prompt`,
   or from a script with `hub -f <file>`. `exit` leaves hub.
@@ -42,18 +43,65 @@ Phase 2 adds repair and recovery to the phase 1 scheduler.
 ## Build and test
 
     make          # build/hub.bin, assembled with a host build of zap
-    make test     # the emulator checks, and the controls that show each
-                  # check fails without the feature it covers
+    make test     # the emulator checks, the controls that show each
+                  # check fails without the feature it covers, and the
+                  # library package (test/libs.sh)
 
 `ZAP_SRC` names zap's source tree (default `~/code/zap`); `AGONDEV` the
 agondev install used for the C client and `libhub.a` (default `~/agondev`);
-`AGON_EMU` the emulator release (default `~/fab-agon-emulator-1.2.4`).
+`AGON_EMU` the emulator release (default `~/fab-agon-emulator-1.2.4`);
+`ACC` acc's host build (default `~/code/acc/bin/acc`), and for the tests
+`ACC_BIN`, its Agon build, and `ACC_HOME`, its checkout, whose C library
+and headers go on the test card.
 
 ## Install
 
-Copy `build/hub.bin` to `/mos/` on the card and type `hub`, or put
-`hub` at the end of `autoexec.obey` -- which is also what lets hub resume
-after a reset.
+Unzip `hub-<version>.zip` at the root of the SD card:
+
+    /mos/hub.bin                  hub itself
+    /lib/acc/libhub.a             the client library, for acc on the Agon
+    /lib/acc/include/hub/hub.h    its header
+
+Type `hub`, or put `hub` at the end of `autoexec.obey` -- which is also what
+lets hub resume after a reset. `exit` leaves it; F12 brings it back.
+
+## Writing programs for hub
+
+A C program includes `<hub/hub.h>` and links `libhub.a`. On the Agon, with
+acc installed from its own release, that is all it takes -- acc searches
+`/lib/acc/include` for every `#include`:
+
+    acc main.c /lib/acc/libhub.a
+
+On a PC or Mac, `hub-libs-<version>.tar.gz` has the library for both
+compilers:
+
+    include/hub/hub.h         the C API
+    include/hub/hub.inc       the same for zap programs
+    lib/agondev/libhub.a      for agondev
+    lib/acc/libhub.a          for acc
+    VERSION                   hub's version and the commit it was built from
+
+With agondev, the three lines go after the `include` of agondev's makefile,
+which sets `CFLAGS` and `PROJECTLIBDIR` itself:
+
+    include $(shell agondev-config --makefile)
+
+    CFLAGS += -I<dir>/include
+    PROJECTLIBDIR := <dir>/lib/agondev
+    LIBS := -lhub
+
+With acc: `acc main.c -I<dir>/include <dir>/lib/acc/libhub.a`.
+
+A program must work without hub too: `hub_present()` is false then, and
+every other call fails harmlessly.
+
+## Releasing
+
+    ./mkrelease.sh    # hub-<version>.zip and hub-libs-<version>.tar.gz
+
+The version is written once, in `src/version.inc`; hub prints it when it
+starts.
 
 ## MOS 3.0.2 bugs worked around
 

@@ -594,8 +594,12 @@ s_exit:         db      "exit", 0
 script_echo:    db      "hub> ", 0
 crlf:           db      13, 10, 0
 nlcr:           db      10, 13, 0
-msg_banner:     db      "hub 0.2", 13, 10, 0
-msg_resumed:    db      "hub 0.2: resumed after a reset", 13, 10, 0
+msg_banner:     db      "hub "
+                INCLUDE "version.inc"
+                db      13, 10, 0
+msg_resumed:    db      "hub "
+                INCLUDE "version.inc"
+                db      ": resumed after a reset", 13, 10, 0
 msg_running:    db      "hub is already running", 13, 10, 0
 v_api:          db      "Hub$API", 0
 v_hotkey:       db      "Hotkey$12", 0

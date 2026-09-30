@@ -20,6 +20,11 @@ ROUNDS=${ROUNDS:-100}
 # under hub runs. Their checks are skipped when a build isn't there.
 ZAP_BIN=${ZAP_BIN:-$HOME/code/zap/bin/zap.bin}
 ACC_BIN=${ACC_BIN:-$HOME/code/acc/bin/acc.bin}
+# acc's C library, runtime and headers, for a card laid out as acc's release
+# lays it out, so a program can be compiled on the Agon.
+ACC_HOME=${ACC_HOME:-$HOME/code/acc}
+
+VERSION=$(sed -n 's/^ *db *"\(.*\)".*/\1/p' "$ROOT/src/version.inc")
 
 status=0
 
@@ -35,7 +40,7 @@ card() {
     mkdir -p "$sd/bin"
     cp "$1/hub.bin" "$sd/mos/"
     cp "$1/test/stomp.bin" "$1/test/bigmos.bin" "$sd/mos/"
-    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient reset; do
+    for p in hello fail kbhook kbprobe leak fprobe vechook vecprobe client cclient cclienta reset; do
         cp "$1/test/$p.bin" "$sd/bin/"
     done
     [ -f "$ZAP_BIN" ] && cp "$ZAP_BIN" "$sd/bin/zap.bin"
@@ -73,6 +78,7 @@ card() {
         echo "client r"
         echo "Echo after-reset"
         echo "cclient"
+        echo "cclienta"
         echo "client t zap /bad.s /bad.bin -c -e /zap.err"
         echo "Type /zap.err"
         echo "client t acc /bad.c -o /bad2.bin -errors /acc.err"
@@ -111,13 +117,14 @@ sd=$(card "$ROOT/build")
 out=$(run "$sd" 300)
 rm -rf "$sd"
 
-has "$out" "hub 0.2" && pass "hub starts" || fail "hub starts"
+grep -qxF "hub $VERSION" <<< "$out" && pass "hub starts, and says it is $VERSION" \
+    || fail "hub starts, and says it is $VERSION"
 
 # Starting must leave the shell as it was loaded: nothing may write into its
 # code -- a command run through OSCLI from a string in the shell did, since
 # mos_exec edits the command it is given -- or the core "repairs" a shell no
 # moslet touched, and reloads it before the first line.
-start=$(sed -n '/^hub 0.2$/,/^hub> /p' <<< "$out")
+start=$(sed -n "/^hub $VERSION\$/,/^hub> /p" <<< "$out")
 ! has "$start" "hub: shell reloaded" && pass "starting leaves the shell intact" \
     || fail "starting leaves the shell intact"
 
@@ -172,17 +179,22 @@ else
     fail "a failed stop-on-error job skips to the continuation, which sees why"
 fi
 
-# The C client, through include/hub.h and lib/hub_glue.s: its third run's
-# frame fails on purpose, and the fourth run, that frame's continuation, sees
-# which job and why.
-if has "$out" "cclient 1: last 0, failed -1, depth 0, resumed 0" \
-   && has "$out" "cclient 4: last 19, failed 0, depth 0, resumed 0" \
-   && has "$out" "cclient 5: last 0, failed -1, depth 0, resumed 0" \
-   && has "$out" "cclient done" && ! has "$out" "cclient-not-run"; then
-    pass "a C client chains through hub.h, and sees a failed frame"
-else
-    fail "a C client chains through hub.h, and sees a failed frame"
-fi
+# The C client, through include/hub/hub.h and lib/hub_glue.s, built by agondev
+# (cclient) and by acc (cclienta): its third run's frame fails on purpose,
+# and the fourth run, that frame's continuation, sees which job and why.
+client_check() {
+    local name=$1 by=$2
+    if has "$out" "$name 1: last 0, failed -1, depth 0, resumed 0" \
+       && has "$out" "$name 4: last 19, failed 0, depth 0, resumed 0" \
+       && has "$out" "$name 5: last 0, failed -1, depth 0, resumed 0" \
+       && has "$out" "$name done" && ! has "$out" "$name-not-run"; then
+        pass "a C client built by $by chains through hub.h, and sees a failed frame"
+    else
+        fail "a C client built by $by chains through hub.h, and sees a failed frame"
+    fi
+}
+client_check cclient agondev
+client_check cclienta acc
 
 ! has "$out" "a long command was accepted" \
     && pass "hub_push refuses a command longer than HUB_CMD_MAX" \
@@ -265,6 +277,37 @@ has "$tail_out" "no hub" && pass "leaving hub withdraws Hub\$API" \
     || fail "leaving hub withdraws Hub\$API"
 has "$tail_out" "cclient: no hub" && pass "hub_present() is false without hub" \
     || fail "hub_present() is false without hub"
+
+# --- the release, as a card gets it -------------------------------------------
+
+# The release zip unzipped over acc's own layout, as a user installs the two:
+# the client, compiled on the Agon by acc, finds <hub/hub.h> without -I, links
+# /lib/acc/libhub.a, and runs under hub like the builds above.
+if [ ! -f "$ACC_BIN" ]; then
+    echo "SKIP  release: no Agon build of acc at $ACC_BIN"
+else
+    rel=$(mktemp -d)
+    "$ROOT/mkrelease.sh" "$rel" > /dev/null
+    sd=$(mktemp -d)
+    cp -r "$EMU/sdcard/mos" "$sd/"
+    cp "$EMU/sdcard/MOS.bin" "$EMU/sdcard/firmware.bin" "$sd/"
+    mkdir -p "$sd/bin" "$sd/lib/acc"
+    cp "$ACC_BIN" "$sd/bin/acc.bin"
+    cp "$ACC_HOME/bin/libc.a" "$ACC_HOME/bin/rt.a" "$sd/lib/acc/"
+    cp -r "$ACC_HOME/include" "$sd/lib/acc/include"
+    unzip -q -o "$rel/hub-$VERSION.zip" -d "$sd"
+    cp "$ROOT/build/test/fail.bin" "$sd/bin/"       # the job run 3 fails with
+    cp "$ROOT/test/c/src/main.c" "$sd/main.c"
+    printf 'acc /main.c -DCLIENT_CARD /lib/acc/libhub.a -o /bin/cclientc.bin\r\ncclientc\r\n' \
+        > "$sd/script.txt"
+    printf 'hub -f /script.txt\r\nemulator_exit_success\r\n' > "$sd/autoexec.txt"
+    out=$(run "$sd" 300)
+    rm -rf "$sd" "$rel"
+
+    grep -qxF "hub $VERSION" <<< "$out" && pass "the release zip's hub starts" \
+        || fail "the release zip's hub starts"
+    client_check cclientc "acc on the Agon from the release zip"
+fi
 
 # --- controls: each check above must fail without its feature ---------------
 

@@ -1,5 +1,5 @@
 /*
- * hub.h -- the hub client API, for C programs built with agondev.
+ * hub/hub.h -- the hub client API, for C programs built with agondev or acc.
  *
  * hub is a resident shell for MOS 3.0.2. A program running under it can ask
  * hub to run commands after it returns, and to bring it back afterwards:
@@ -20,7 +20,8 @@
  * or 0 for hub_block) when it hasn't found hub. A program must keep working
  * without hub -- on a machine without it, hub_present() is simply false.
  *
- * Link with libhub.a (lib/hub_glue.s, assembled with zap -f elf).
+ * Link with libhub.a: lib/agondev/libhub.a or lib/acc/libhub.a, both
+ * assembled by zap from lib/hub_glue.s.
  */
 #ifndef HUB_H
 #define HUB_H
