@@ -1,9 +1,10 @@
 # hub: build with a host copy of zap, the eZ80 assembler.
 #
 #   make                  build/hub.bin and the test programs
-#   make test             run them in the emulator, and check the library
+#   make test             run them in the emulator (the CLI one, and the full
+#                         one for the user screen), and check the library
 #                         package
-#   make B=build/x GUARDS=0 REPAIR=0 SNAPSHOT=0
+#   make B=build/x GUARDS=0 REPAIR=0 SNAPSHOT=0 CAPTURE=0 API_COUNT=8
 #                         a build with a feature switched off, for the tests
 #                         that check each feature is what makes them pass
 #
@@ -15,6 +16,8 @@ B       ?= build
 GUARDS  ?= 1
 REPAIR  ?= 1
 SNAPSHOT ?= 1
+CAPTURE ?= 1
+API_COUNT ?= 9          # entries hub advertises; 8 poses as hub 0.3, for a test
 
 ZAP     := $(abspath build/zap)
 CORE_MAX := 1792        # CTL_BASE - CORE_BASE: the core's code must end below its data
@@ -24,7 +27,7 @@ ZAP_SRCS := $(addprefix $(ZAP_SRC)/, src/zap.c src/symtab.c src/scan.c src/expr.
 	src/value.c src/conv.c src/isa_table.c test/stubs/agon_stubs.c)
 
 PROGS := $(patsubst test/progs/%.s,$(B)/test/%.bin,$(wildcard test/progs/*.s)) \
-	$(B)/test/cclient.bin $(B)/test/cclienta.bin
+	$(B)/test/cclient.bin $(B)/test/cclienta.bin $(B)/test/shot.bin
 
 AGONDEV ?= $(HOME)/agondev
 ACC     ?= $(HOME)/code/acc/bin/acc     # acc's host build: libc, rt and headers beside it
@@ -41,8 +44,8 @@ $(ZAP): $(ZAP_SRCS)
 # Rewritten only when a setting changes, so switching GUARDS rebuilds the core.
 $(B)/config.inc: FORCE
 	@mkdir -p $(B)
-	@printf 'GUARDS: equ %s\nREPAIR: equ %s\nSNAPSHOT: equ %s\n' \
-		$(GUARDS) $(REPAIR) $(SNAPSHOT) > $@.new
+	@printf 'GUARDS: equ %s\nREPAIR: equ %s\nSNAPSHOT: equ %s\nCAPTURE: equ %s\nAPI_COUNT: equ %s\n' \
+		$(GUARDS) $(REPAIR) $(SNAPSHOT) $(CAPTURE) $(API_COUNT) > $@.new
 	@cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
 $(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/config.inc $(ZAP)
@@ -51,8 +54,9 @@ $(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/config
 	@size=$$(stat -c %s $@); if [ $$size -gt $(CORE_MAX) ]; then \
 		echo "core is $$size bytes; it must fit in $(CORE_MAX)"; rm -f $@; exit 1; fi
 
-$(B)/hub.bin: src/hub.s src/mos_api.inc src/layout.inc src/version.inc $(B)/core.bin $(ZAP)
-	cp src/hub.s src/mos_api.inc src/layout.inc src/version.inc $(B)/
+$(B)/hub.bin: src/hub.s src/mos_api.inc src/layout.inc src/hub.inc src/version.inc \
+		$(B)/config.inc $(B)/core.bin $(ZAP)
+	cp src/hub.s src/mos_api.inc src/layout.inc src/hub.inc src/version.inc $(B)/
 	cd $(B) && $(ZAP) -c hub.s hub.bin > hub.log || { cat hub.log; exit 1; }
 
 $(B)/test/%.bin: test/progs/%.s src/mos_api.inc src/hub.inc $(ZAP)
@@ -90,6 +94,16 @@ $(B)/test/cclient.bin: test/c/src/main.c include/hub/hub.h $(B)/lib/agondev/libh
 		-f $(AGONDEV)/config/makefile.inc NAME=cclient LIBS=-lhub
 	cp $(B)/cclient/bin/cclient.bin $@
 
+# shot: the user-screen client test/screen.sh runs on the full emulator.
+$(B)/test/shot.bin: test/shot/src/main.c include/hub/hub.h $(B)/lib/agondev/libhub.a
+	@mkdir -p $(B)/shot/src $(B)/shot/include/hub $(B)/shot/lib $(B)/test
+	cp test/shot/src/main.c $(B)/shot/src/
+	cp include/hub/hub.h $(B)/shot/include/hub/
+	cp $(B)/lib/agondev/libhub.a $(B)/shot/lib/
+	PATH=$(AGONDEV)/bin:$$PATH $(MAKE) -s -C $(B)/shot \
+		-f $(AGONDEV)/config/makefile.inc NAME=shot LIBS=-lhub
+	cp $(B)/shot/bin/shot.bin $@
+
 # cclienta: the same client built by acc, under its own name and block.
 $(B)/test/cclienta.bin: test/c/src/main.c include/hub/hub.h $(B)/lib/acc/libhub.a
 	@mkdir -p $(B)/test
@@ -97,6 +111,7 @@ $(B)/test/cclienta.bin: test/c/src/main.c include/hub/hub.h $(B)/lib/acc/libhub.
 
 test: all
 	test/run.sh
+	test/screen.sh
 	test/libs.sh
 
 clean:

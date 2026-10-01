@@ -15,6 +15,8 @@
         ASSUME  ADL=1
         INCLUDE "mos_api.inc"
         INCLUDE "layout.inc"
+        INCLUDE "hub.inc"
+        INCLUDE "config.inc"
 
         ORG     SHELL_BASE
 
@@ -127,7 +129,9 @@ start:
 
         ld      a, (RESUMING)
         call    CORE_INIT
-        call    publish_api
+        xor     a, a
+        ld      (CTL_CAPMODE), a        ; a reset may have cleared the VDP's
+        call    publish_api             ; buffers; there is no capture now
         call    bind_f12
 
         pop     hl
@@ -350,9 +354,7 @@ parse_args:
 ; prompt, which a HUB_USER_PROGRAM job starts in whatever the program that
 ; queued it did to the screen.
 readline:
-        ld      a, mos_sysvars
-        rst.lil $08
-        ld      a, (ix+sysvar_scrMode)
+        call    vdp_mode
         ld      (CTL_SCRMODE), a
 
         ld      a, (CTL_MODE)
@@ -522,6 +524,13 @@ job_start:
 ; whether the job worked or not. With the variable Hub$NoPause set, as a
 ; test sets it, the message is printed and nothing waits.
 job_end:
+        IF CAPTURE
+        push    af
+        bit     1, a                    ; HUB_USER_PROGRAM
+        call    nz, capture
+        pop     af
+        ENDIF
+
         bit     2, a                    ; HUB_PAUSE_AFTER
         ret     z
 
@@ -536,6 +545,35 @@ job_end:
 @go:
         ld      hl, crlf
         jp      print
+
+; capture: keep the screen a HUB_USER_PROGRAM job left, for its client to
+; show again (hub_user_screen) -- before the pause draws over it.
+;
+; VDU 23,27,&21 copies the rectangle between the last two graphics cursor
+; positions into a buffer, as a bitmap (RGBA2222 from VDP 2.6.0, whatever
+; the mode). The buffer is cleared first, and the coordinates the program
+; may have changed are put back -- logical coordinates (VDU 23,0,&C0,1),
+; origin at 0,0 -- so the corners are the screen's own: 0,0 and
+; 1279,1023. A VDP without the command ignores it, and the buffer stays
+; empty. Then the mode, as MOS last heard it from the VDP.
+capture:
+        ld      hl, vdu_capture
+        ld      bc, vdu_capture_end - vdu_capture
+        xor     a, a
+        rst.lil $18
+        call    vdp_mode
+        inc     a
+        ld      (CTL_CAPMODE), a
+
+        ret
+
+; vdp_mode: A = the screen mode, as MOS last heard it from the VDP.
+vdp_mode:
+        ld      a, mos_sysvars
+        rst.lil $08
+        ld      a, (ix+sysvar_scrMode)
+
+        ret
 
 ; read_line: the next line of the script into LINE_BUF, without its CR/LF.
 ; Carry set if the file had nothing left.
@@ -680,6 +718,18 @@ vdu_reset:      db      23, 16, 0, 0            ; cursor behaviour: defaults
 vdu_reset_mode:
                 db      23, 1, 1                ; the cursor on
 vdu_reset_end:
+vdu_capture:    db      23, 0, $a0              ; clear the buffer
+                dw      HUB_SCREEN_BUFFER
+                db      2
+                db      23, 0, $c0, 1           ; logical coordinates
+                db      29, 0, 0, 0, 0          ; graphics origin 0,0
+                db      25, 4, 0, 0, 0, 0       ; one corner,
+                db      25, 4                   ; and the other
+                dw      1279, 1023
+                db      23, 27, $21             ; capture into the buffer
+                dw      HUB_SCREEN_BUFFER
+                dw      0
+vdu_capture_end:
 
 core_image:
         INCBIN  "core.bin"

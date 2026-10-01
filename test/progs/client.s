@@ -34,7 +34,9 @@
 ;       would leave it, then open a frame with "fail" as a user program that
 ;       pauses after (HUB_USER_PROGRAM | HUB_PAUSE_AFTER, not stop on error),
 ;       and the continuation "client U".
-;   U   Print the frame's last result and failed job.
+;   U   Print the frame's last result and failed job, and what
+;       hub_user_screen says.
+;   S   Print what hub_user_screen says.
 ;
 ; Without hub it prints "no hub" and returns.
 
@@ -99,6 +101,8 @@ start:
         jp      z, user_prog
         cp      a, 'U'
         jp      z, user_back
+        cp      a, 'S'
+        jp      z, user_screen
 
 finish:
         pop     iy
@@ -394,6 +398,15 @@ user_back:
         ld      a, l
         call    print_u8
         call    newline
+
+user_screen:
+        ld      hl, msg_user_screen
+        call    print
+        ld      a, HUB_USER_SCREEN
+        call    hub
+        ld      a, l
+        call    print_u8
+        call    newline
         jp      finish
 
 ; find_hub: carry set if hub is running and its header is one we know, with
@@ -564,6 +577,7 @@ msg_queue_back: db      "queue back", 13, 10, 0
 tag_user:       db      "USER"
 cmd_user_back:  db      "client U", 0
 msg_user_back:  db      "user back: last ", 0
+msg_user_screen: db     "user screen ", 0
 msg_count_done: db      "count done", 13, 10, 0
 msg_outer:      db      "outer", 13, 10, 0
 msg_inner:      db      "inner", 13, 10, 0

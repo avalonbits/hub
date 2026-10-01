@@ -44,6 +44,9 @@
 #define HUB_CMD_MAX         93      /* longest command a job can hold */
 #define HUB_MAX_JOBS        8       /* jobs waiting, continuations included;
                                        the running job doesn't count */
+
+/* VDP buffers 0x4800-0x48FF are hub's; programs should leave them alone. */
+#define HUB_SCREEN_BUFFER   0x4855  /* the last user program's screen */
 #define HUB_RESULT_RESET    255     /* the result of a job a reset cut short */
 
 /* Status codes. */
@@ -83,5 +86,17 @@ int hub_depth(void);
  * running -- that job then counts as failed, with HUB_RESULT_RESET -- else
  * 0. Anywhere else: 0. Needs hub 0.2 or later. */
 int hub_resumed(void);
+
+/* The screen mode the last HUB_USER_PROGRAM job left the screen in, or -1 if
+ * there is none (or hub is older than 0.4). hub captured that screen, after
+ * the program and before any pause, into the VDP buffer HUB_SCREEN_BUFFER as
+ * a bitmap. To show it again: switch to that mode if it differs, then
+ *
+ *     VDU 23,27,&20,HUB_SCREEN_BUFFER;    select it
+ *     VDU 23,27,3,0;0;                    draw it at the top left
+ *
+ * The capture needs VDP 2.2.0 or later; on an older VDP the buffer is empty
+ * and drawing it does nothing. */
+int hub_user_screen(void);
 
 #endif

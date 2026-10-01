@@ -79,6 +79,7 @@ card() {
         echo "Echo after-reset"
         echo "cclient"
         echo "cclienta"
+        echo "client S"
         echo "client p"
         echo "Set Hub\$NoPause 1"
         echo "scrmode 3"
@@ -216,21 +217,36 @@ fi
 # not the 1 the client left -- and the cursor on, all before the job. Then
 # the job, which fails, then the pause (Hub$NoPause is set, so it doesn't
 # wait), and the continuation still sees the job's result and no failed job.
-user=$(sed -n '/^hub> client u$/,/^user back/p' <<< "$out")
+user=$(sed -n '/^hub> client u$/,/^user screen/p' <<< "$out")
 want='unknown packet VDU 0x17, 0x10
 unknown packet VDU 0x17, 0, 0x95
 Unknown packet VDU 0x16
 Unknown packet VDU 0x3
 unknown packet VDU 0x17, 0x1
-failing on purpose
-Press a key to return
-user back: last 19, failed job 255'
-got=$(grep -aoE '[Uu]nknown packet VDU.*|failing on purpose|Press a key to return|user back.*' <<< "$user")
-if [ "$got" = "$want" ]; then
+failing on purpose'
+got=$(sed -n '1,/^failing on purpose/p' <<< "$user" \
+    | grep -aoE '[Uu]nknown packet VDU.*|failing on purpose')
+if [ "$got" = "$want" ] && has "$user" "Press a key to return" \
+   && has "$user" "user back: last 19, failed job 255"; then
     pass "a user program gets the prompt's screen, and a pause after"
 else
     fail "a user program gets the prompt's screen, and a pause after"
     printf '%s\n' "$got" | sed 's/^/      /'
+fi
+
+# The screen it left is captured after it and before the pause: the buffer
+# cleared (VDU 23,0,&A0) and the capture (VDU 23,27,&21) are in the log
+# between them -- the stand-in VDP draws neither, so test/screen.sh checks
+# what is captured on the real one. hub_user_screen is -1 until then, and
+# afterwards the mode MOS last heard of: 1, the one the client noted, since
+# the stand-in VDP never reports a mode change.
+capture=$(sed -n '/^failing on purpose/,/^Press a key to return/p' <<< "$user")
+if has "$capture" "unknown packet VDU 0x17, 0, 0xa0" \
+   && has "$capture" "unknown packet VDU 0x17, 0x1b" \
+   && has "$out" "user screen 255" && has "$user" "user screen 1"; then
+    pass "a user program's screen is captured before the pause"
+else
+    fail "a user program's screen is captured before the pause"
 fi
 
 ! has "$out" "a long command was accepted" \
@@ -373,6 +389,18 @@ has "$out" "free handles: 5" && pass "control: without guards the files leak" \
     || fail "control: without guards the files leak"
 has "$out" "vector: user" && pass "control: without guards the handler stays" \
     || fail "control: without guards the handler stays"
+
+make -s -C "$ROOT" B=build/nocapture CAPTURE=0 >/dev/null || { echo "FAIL  build"; exit 1; }
+sd=$(card "$ROOT/build/nocapture")
+out=$(run "$sd" 300)
+rm -rf "$sd"
+
+user=$(sed -n '/^hub> client u$/,/^user screen/p' <<< "$out")
+if ! has "$user" "unknown packet VDU 0x17, 0x1b" && has "$user" "user screen 255"; then
+    pass "control: without capture there is no user screen"
+else
+    fail "control: without capture there is no user screen"
+fi
 
 make -s -C "$ROOT" B=build/nosnapshot SNAPSHOT=0 >/dev/null || { echo "FAIL  build"; exit 1; }
 sd=$(card "$ROOT/build/nosnapshot")

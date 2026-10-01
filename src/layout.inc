@@ -99,7 +99,11 @@ CTL_RUNNING:    equ     CTL_PUSH_FLAGS + 1                ; JOB_CMD bytes
 ; The screen mode at hub's prompt, which a HUB_USER_PROGRAM job starts in.
 CTL_SCRMODE:    equ     CTL_RUNNING + JOB_CMD             ; 1
 
-CTL_END:        equ     CTL_SCRMODE + 1
+; The mode the last HUB_USER_PROGRAM job's screen was captured in, plus 1;
+; 0 when there is no capture.
+CTL_CAPMODE:    equ     CTL_SCRMODE + 1                   ; 1
+
+CTL_END:        equ     CTL_CAPMODE + 1
 
 CMD_MAX:        equ     255             ; longest line accepted, without "Try "
 NVECTORS:       equ     48              ; MOS's interrupt vectors, numbered 0, 2, ... $5E

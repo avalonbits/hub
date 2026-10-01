@@ -117,8 +117,9 @@
 api_header:
         db      "HUB"                   ; HUB_MAGIC
         db      0                       ; HUB_MAJOR
-        db      3                       ; HUB_MINOR
-        db      8                       ; HUB_COUNT
+        db      4                       ; HUB_MINOR
+        db      API_COUNT               ; HUB_COUNT: 9, unless a test build
+                                        ; poses as an older hub
         jp      api_enter               ; HUB_ENTER
         jp      api_push                ; HUB_PUSH
         jp      api_return_to           ; HUB_RETURN_TO
@@ -127,6 +128,7 @@ api_header:
         jp      api_block               ; HUB_BLOCK
         jp      api_depth               ; HUB_DEPTH
         jp      api_resumed             ; HUB_RESUMED
+        jp      api_user_screen         ; HUB_USER_SCREEN
 
 ; ----------------------------------------------------------------------------
 ; core_init: everything the core sets up when hub starts.
@@ -779,6 +781,17 @@ api_resumed:
         ld      hl, 0
         ld      a, (DONE_RESET)
         ld      l, a
+        xor     a, a
+
+        ret
+
+; api_user_screen: HL = the mode of the captured user screen, or -1. The
+; shell stores it plus 1, so the 0 a fresh control block holds reads as -1.
+api_user_screen:
+        ld      hl, 0
+        ld      a, (CTL_CAPMODE)
+        ld      l, a
+        dec     hl
         xor     a, a
 
         ret

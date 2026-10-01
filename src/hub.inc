@@ -74,6 +74,12 @@ HUB_DEPTH:      equ     30
 ;                  Anywhere else: 0. (Since version 0.2.)
 HUB_RESUMED:    equ     34
 
+; hub_user_screen  HL = the screen mode the last HUB_USER_PROGRAM job left the
+;                  screen in, captured then into the VDP buffer
+;                  HUB_SCREEN_BUFFER; -1 if there is no capture yet.
+;                  (Since version 0.4.)
+HUB_USER_SCREEN: equ    38
+
 HUB_RESULT_RESET:       equ     255     ; the result of a job a reset cut short
 
 ; Flags for hub_push.
@@ -92,3 +98,8 @@ HUB_CONTINUATION:       equ     $80     ; set by hub_return_to; not for hub_push
 
 HUB_CMD_MAX:    equ     93              ; longest command a job can hold
 HUB_MAX_JOBS:   equ     8               ; jobs the queue holds
+
+; VDP buffers $4800-$48FF are hub's; programs should leave them alone.
+HUB_SCREEN_BUFFER: equ  $4855           ; the last user program's screen, as a
+                                        ; bitmap: select it with VDU 23,27,&20
+                                        ; and draw it with VDU 23,27,3

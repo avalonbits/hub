@@ -25,6 +25,12 @@ Phase 2 adds repair and recovery to the phase 1 scheduler.
   with "Press a key to return" (set `Hub$NoPause` to print it without
   waiting, as tests do). The queue holds eight jobs waiting to run; the one
   running doesn't take a slot.
+- **The user screen.** After a `HUB_USER_PROGRAM` job, and before its
+  pause, hub captures the screen the program left into the VDP buffer
+  `HUB_SCREEN_BUFFER` (`VDU 23,27,&21`, VDP 2.2.0 and later), so the
+  program that queued it can show it again -- Turbo Pascal's Alt-F5.
+  `hub_user_screen()` gives the mode it was captured in, or -1. VDP
+  buffers `0x4800`-`0x48FF` are hub's.
 - **Repair and recovery.** A moslet loads over the shell and, if it is big
   enough (nano is 6.5 KB), over the client blocks. The core saves the blocks
   to `hub.blk` next to `hub.bin` whenever they change, and after a moslet
@@ -49,8 +55,10 @@ Phase 2 adds repair and recovery to the phase 1 scheduler.
 
     make          # build/hub.bin, assembled with a host build of zap
     make test     # the emulator checks, the controls that show each
-                  # check fails without the feature it covers, and the
-                  # library package (test/libs.sh)
+                  # check fails without the feature it covers, the user
+                  # screen on the full emulator's real VDP (test/screen.sh,
+                  # with SDL's dummy video), and the library package
+                  # (test/libs.sh)
 
 `ZAP_SRC` names zap's source tree (default `~/code/zap`); `AGONDEV` the
 agondev install used for the C client and `libhub.a` (default `~/agondev`);

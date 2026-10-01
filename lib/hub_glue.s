@@ -18,7 +18,7 @@
 
         XDEF    _hub_present, _hub_enter, _hub_push, _hub_return_to
         XDEF    _hub_last_result, _hub_failed_job, _hub_block, _hub_depth
-        XDEF    _hub_resumed
+        XDEF    _hub_resumed, _hub_user_screen
 
 mos_readvarval: equ     $31
 HUB_ERR_ABSENT: equ     255
@@ -130,6 +130,30 @@ _hub_depth:
 _hub_resumed:
         ld      a, HUB_RESUMED
         jr      value
+
+; int hub_user_screen(void)
+;
+; -1 without hub, and with a hub older than 0.4, whose table has no entry
+; this far down: calling past HUB_COUNT entries would jump into whatever
+; follows the table.
+_hub_user_screen:
+        ld      hl, (hub_api)
+        ld      de, 0
+        or      a, a
+        sbc     hl, de
+        jr      z, @none
+        push    hl
+        pop     iy
+        ld      a, (iy+HUB_COUNT)
+        cp      a, (HUB_USER_SCREEN - HUB_ENTER) / 4 + 1
+        jr      c, @none
+        ld      a, HUB_USER_SCREEN
+        jr      api
+
+@none:
+        ld      hl, -1
+
+        ret
 
 ; void *hub_block(const char tag[4], size_t size)
 _hub_block:
