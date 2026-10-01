@@ -87,9 +87,11 @@ HUB_STOP_ON_ERROR:      equ     $01     ; a non-zero result skips the rest of th
                                         ; frame's jobs, up to its continuation
 HUB_USER_PROGRAM:       equ     $02     ; start with the screen as it was at
                                         ; hub's prompt: its mode (clearing
-                                        ; it), colours, viewports, the
-                                        ; system font, the cursor shown and
-                                        ; its behaviour reset. (Since 0.3.)
+                                        ; it), colours, viewports, its font,
+                                        ; the cursor shown and its behaviour
+                                        ; reset; and afterwards (after any
+                                        ; pause) put it back so again.
+                                        ; (Since 0.3; the font since 0.4.1.)
 HUB_PAUSE_AFTER:        equ     $04     ; afterwards, worked or not, "Press a
                                         ; key to return" and wait for one --
                                         ; unless the variable Hub$NoPause is

@@ -4,7 +4,7 @@
 #   make test             run them in the emulator (the CLI one, and the full
 #                         one for the user screen), and check the library
 #                         package
-#   make B=build/x GUARDS=0 REPAIR=0 SNAPSHOT=0 CAPTURE=0 API_COUNT=8
+#   make B=build/x GUARDS=0 REPAIR=0 SNAPSHOT=0 CAPTURE=0 PROMPTFONT=0 API_COUNT=8
 #                         a build with a feature switched off, for the tests
 #                         that check each feature is what makes them pass
 #
@@ -17,6 +17,7 @@ GUARDS  ?= 1
 REPAIR  ?= 1
 SNAPSHOT ?= 1
 CAPTURE ?= 1
+PROMPTFONT ?= 1
 API_COUNT ?= 9          # entries hub advertises; 8 poses as hub 0.3, for a test
 
 ZAP     := $(abspath build/zap)
@@ -44,8 +45,8 @@ $(ZAP): $(ZAP_SRCS)
 # Rewritten only when a setting changes, so switching GUARDS rebuilds the core.
 $(B)/config.inc: FORCE
 	@mkdir -p $(B)
-	@printf 'GUARDS: equ %s\nREPAIR: equ %s\nSNAPSHOT: equ %s\nCAPTURE: equ %s\nAPI_COUNT: equ %s\n' \
-		$(GUARDS) $(REPAIR) $(SNAPSHOT) $(CAPTURE) $(API_COUNT) > $@.new
+	@printf 'GUARDS: equ %s\nREPAIR: equ %s\nSNAPSHOT: equ %s\nCAPTURE: equ %s\nPROMPTFONT: equ %s\nAPI_COUNT: equ %s\n' \
+		$(GUARDS) $(REPAIR) $(SNAPSHOT) $(CAPTURE) $(PROMPTFONT) $(API_COUNT) > $@.new
 	@cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
 $(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/config.inc $(ZAP)

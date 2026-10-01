@@ -103,7 +103,11 @@ CTL_SCRMODE:    equ     CTL_RUNNING + JOB_CMD             ; 1
 ; 0 when there is no capture.
 CTL_CAPMODE:    equ     CTL_SCRMODE + 1                   ; 1
 
-CTL_END:        equ     CTL_CAPMODE + 1
+; The font selected at hub's prompt, as hub has seen it chosen: a buffer
+; ID, $FFFF for the system font (3 bytes; the top one is 0).
+CTL_FONT:       equ     CTL_CAPMODE + 1                   ; 3
+
+CTL_END:        equ     CTL_FONT + 3
 
 CMD_MAX:        equ     255             ; longest line accepted, without "Try "
 NVECTORS:       equ     48              ; MOS's interrupt vectors, numbered 0, 2, ... $5E

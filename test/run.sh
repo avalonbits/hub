@@ -84,6 +84,10 @@ card() {
         echo "Set Hub\$NoPause 1"
         echo "scrmode 3"
         echo "client u"
+        echo "fontctl &4C"
+        echo "client u"
+        echo "VDU 22 3"
+        echo "client u"
         echo "client t zap /bad.s /bad.bin -c -e /zap.err"
         echo "Type /zap.err"
         echo "client t acc /bad.c -o /bad2.bin -errors /acc.err"
@@ -92,7 +96,10 @@ card() {
 
     # The script ends by running out of lines, which leaves hub; the lines
     # after it run at MOS's own prompt, with hub gone.
-    printf 'hub -f /script.txt\r\nclient c\r\ncclient\r\nemulator_exit_success\r\n' \
+    # A font chosen before hub starts, as a machine set up for one does it:
+    # hub finds it in autoexec.txt. (The stand-in VDP logs it, and prints
+    # the ID's byte as a character: Echo moves what follows to a new line.)
+    printf 'VDU 23 0 149 0 100 0 0\r\nEcho\r\nhub -f /script.txt\r\nclient c\r\ncclient\r\nemulator_exit_success\r\n' \
         > "$sd/autoexec.txt"
 
     echo "$sd"
@@ -119,7 +126,7 @@ count() { grep -cF -- "$2" <<< "$1"; }
 
 make -s -C "$ROOT" >/dev/null || { echo "FAIL  build"; exit 1; }
 sd=$(card "$ROOT/build")
-out=$(run "$sd" 300)
+out=$(run "$sd" 300); printf "%s\n" "$out" > /tmp/claude-1002/-home-icc-code-devel/7220477e-b104-40c9-beb4-069d0767421a/scratchpad/out.txt
 rm -rf "$sd"
 
 grep -qxF "hub $VERSION" <<< "$out" && pass "hub starts, and says it is $VERSION" \
@@ -211,28 +218,55 @@ else
     fail "a job can push MAX_JOBS jobs: its own slot is free"
 fi
 
+# user_run <n>: the console from the n-th "client u" to what it says last.
+user_run() {
+    awk -v k="$1" '/^hub> client u$/ { n++; p = (n == k) }
+                   p { print }
+                   p && /^user screen/ { p = 0 }' <<< "$out"
+}
+
 # HUB_USER_PROGRAM | HUB_PAUSE_AFTER. The stand-in VDP logs the VDU commands
 # it doesn't draw, so the reset can be read off the console: cursor
-# behaviour, the system font, then the mode -- 3, the mode at hub's prompt,
-# not the 1 the client left -- and the cursor on, all before the job. Then
-# the job, which fails, then the pause (Hub$NoPause is set, so it doesn't
-# wait), and the continuation still sees the job's result and no failed job.
-user=$(sed -n '/^hub> client u$/,/^user screen/p' <<< "$out")
+# behaviour, then the mode -- 3, the mode at hub's prompt, not the 1 the
+# client left -- then the prompt's font, after the mode since a mode change
+# drops it: 100, from autoexec.txt, whose low byte the stand-in prints as
+# "d". Then the cursor on, all before the job. Then the job, which fails,
+# then the pause (Hub$NoPause is set, so it doesn't wait), then the same
+# reset again so the continuation starts as from the prompt; and the
+# continuation still sees the job's result and no failed job.
+user=$(user_run 1)
 want='unknown packet VDU 0x17, 0x10
-unknown packet VDU 0x17, 0, 0x95
 Unknown packet VDU 0x16
 Unknown packet VDU 0x3
-unknown packet VDU 0x17, 0x1
+unknown packet VDU 0x17, 0, 0x95
+dunknown packet VDU 0x17, 0x1
 failing on purpose'
 got=$(sed -n '1,/^failing on purpose/p' <<< "$user" \
-    | grep -aoE '[Uu]nknown packet VDU.*|failing on purpose')
+    | grep -aoE 'd?[Uu]nknown packet VDU.*|failing on purpose')
+after=$(sed -n '/^Press a key to return/,$p' <<< "$user")
 if [ "$got" = "$want" ] && has "$user" "Press a key to return" \
+   && has "$after" "Unknown packet VDU 0x16" \
+   && has "$after" "dunknown packet VDU 0x17, 0x1" \
    && has "$user" "user back: last 19, failed job 255"; then
-    pass "a user program gets the prompt's screen, and a pause after"
+    pass "a user program gets the prompt's screen and font, a pause, and the prompt's screen back"
 else
-    fail "a user program gets the prompt's screen, and a pause after"
+    fail "a user program gets the prompt's screen and font, a pause, and the prompt's screen back"
     printf '%s\n' "$got" | sed 's/^/      /'
 fi
+
+# A font chosen at hub's prompt -- fontctl &4C, which isn't on the card, but
+# hub notes the line it runs -- is the one the next user program gets: 76,
+# printed "L".
+has "$(user_run 2)" "Lunknown packet VDU 0x17, 0x1" \
+    && pass "a font chosen at hub's prompt is the one a user program gets" \
+    || fail "a font chosen at hub's prompt is the one a user program gets"
+
+# A mode change at the prompt (VDU 22 3) drops the font on a real VDP, so
+# the next user program gets the system font, 65535, which the stand-in
+# prints as two y-diaereses.
+has "$(user_run 3)" $'\xc3\xbf\xc3\xbfunknown packet VDU 0x17, 0x1' \
+    && pass "after a mode change at the prompt, a user program gets the system font" \
+    || fail "after a mode change at the prompt, a user program gets the system font"
 
 # The screen it left is captured after it and before the pause: the buffer
 # cleared (VDU 23,0,&A0) and the capture (VDU 23,27,&21) are in the log
@@ -395,11 +429,23 @@ sd=$(card "$ROOT/build/nocapture")
 out=$(run "$sd" 300)
 rm -rf "$sd"
 
-user=$(sed -n '/^hub> client u$/,/^user screen/p' <<< "$out")
+user=$(user_run 1)
 if ! has "$user" "unknown packet VDU 0x17, 0x1b" && has "$user" "user screen 255"; then
     pass "control: without capture there is no user screen"
 else
     fail "control: without capture there is no user screen"
+fi
+
+make -s -C "$ROOT" B=build/nofont PROMPTFONT=0 >/dev/null || { echo "FAIL  build"; exit 1; }
+sd=$(card "$ROOT/build/nofont")
+out=$(run "$sd" 300)
+rm -rf "$sd"
+
+if ! has "$(user_run 1)" "dunknown packet VDU 0x17, 0x1" \
+   && ! has "$(user_run 2)" "Lunknown packet VDU 0x17, 0x1"; then
+    pass "control: without following the font, a user program gets the system font"
+else
+    fail "control: without following the font, a user program gets the system font"
 fi
 
 make -s -C "$ROOT" B=build/nosnapshot SNAPSHOT=0 >/dev/null || { echo "FAIL  build"; exit 1; }

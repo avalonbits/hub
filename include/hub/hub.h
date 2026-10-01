@@ -34,8 +34,10 @@
                                        frame's jobs, up to its continuation */
 #define HUB_USER_PROGRAM    0x02    /* start with the screen as hub's prompt
                                        had it: its mode (cleared), colours,
-                                       viewports, the system font, the cursor
-                                       shown. Needs hub 0.3. */
+                                       viewports, its font, the cursor shown;
+                                       and afterwards (after any pause) put it
+                                       back so, for what runs next. Needs hub
+                                       0.3; the font, 0.4.1. */
 #define HUB_PAUSE_AFTER     0x04    /* afterwards, worked or not: "Press a key
                                        to return", and wait for one -- unless
                                        the variable Hub$NoPause is set, as for

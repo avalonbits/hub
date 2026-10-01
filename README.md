@@ -21,7 +21,11 @@ Phase 2 adds repair and recovery to the phase 1 scheduler.
   which can ask what happened. `hub_block` hands out named memory that
   outlives a program. A job pushed with `HUB_USER_PROGRAM` starts on the
   screen hub's prompt had -- its mode, colours, font and cursor -- whatever
-  the program that queued it did to it; one with `HUB_PAUSE_AFTER` ends
+  the program that queued it did to it, and leaves it so for what runs next.
+  The VDP can't be asked which font is in use, so hub follows it as aed
+  does: the last selection in `/autoexec.txt` (`fontctl n|sys` or
+  `VDU 23,0,149,0,n`), then the same at its own prompt, where a `VDU 22`
+  mode change goes back to the system font. One with `HUB_PAUSE_AFTER` ends
   with "Press a key to return" (set `Hub$NoPause` to print it without
   waiting, as tests do). The queue holds eight jobs waiting to run; the one
   running doesn't take a slot.
