@@ -19,7 +19,7 @@ Phase 2 adds repair and recovery to the phase 1 scheduler.
   `hub_return_to` sets the continuation that brings the program back.
   Frames nest; a failed stop-on-error job skips to its frame's continuation,
   which can ask what happened. `hub_block` hands out named memory that
-  outlives a program. A job pushed with `HUB_USER_PROGRAM` starts on the
+  outlives a program, and grows a block when a program asks for more. A job pushed with `HUB_USER_PROGRAM` starts on the
   screen hub's prompt had -- its mode, colours, font and cursor -- whatever
   the program that queued it did to it, and leaves it so for what runs next.
   The VDP can't be asked which font is in use, so hub follows it as aed

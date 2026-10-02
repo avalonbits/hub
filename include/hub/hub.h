@@ -78,7 +78,11 @@ int hub_last_result(void);
 int hub_failed_job(void);
 
 /* Memory that keeps its contents between runs, zeroed when first created.
- * NULL if there is no room, or the tag exists with a smaller size. */
+ * Asking for more than the tag's block holds grows it: what it held is kept,
+ * the rest zeroed -- but it may move, so take the address again after asking
+ * for more, and since the old bytes are kept, a program whose state changed
+ * shape should mark its version in it. (Since hub 0.4.2; before, a block too
+ * small was NULL.) NULL if there is no room. */
 void *hub_block(const char tag[4], size_t size);
 
 /* How many frames are open. */

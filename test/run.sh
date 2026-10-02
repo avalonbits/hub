@@ -88,6 +88,10 @@ card() {
         echo "client u"
         echo "VDU 22 3"
         echo "client u"
+        echo "client g"
+        echo "client h"
+        echo "client X"
+        echo "client B"
         echo "client t zap /bad.s /bad.bin -c -e /zap.err"
         echo "Type /zap.err"
         echo "client t acc /bad.c -o /bad2.bin -errors /acc.err"
@@ -281,6 +285,21 @@ if has "$capture" "unknown packet VDU 0x17, 0, 0xa0" \
     pass "a user program's screen is captured before the pause"
 else
     fail "a user program's screen is captured before the pause"
+fi
+
+# Growing a block: asking for more than an existing block holds grows it,
+# the old contents kept and the rest zeroed. KEEP has blocks after it, so it
+# moves; GROW is the last, so it grows in place. More than the area holds is
+# refused, and the block is left as it was; KEEP still answers 42 after it
+# moved.
+if has "$out" "grown: first 42, last 0, moved" \
+   && has "$out" "grown: first 7, last 0, in place" \
+   && has "$out" "too big: refused; first 7" \
+   && [ "$(grep -c '^keep 42$' <<< "$out")" -ge 3 ]; then
+    pass "a block grows, in place or moved, keeping its contents"
+else
+    fail "a block grows, in place or moved, keeping its contents"
+    grep -E '^(grown|too big|keep )' <<< "$out" | sed 's/^/      /'
 fi
 
 ! has "$out" "a long command was accepted" \

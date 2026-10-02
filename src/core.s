@@ -800,13 +800,15 @@ api_user_screen:
 ; api_block: a named block of memory that outlives the program.
 ;
 ; In:   HL = 4-byte tag, BC = size (at least 1).
-; Out:  A = 0, HL = the block; or A = 1, HL = 0 if the size is 0, there is no
-;       room, or the tag exists with a smaller size.
+; Out:  A = 0, HL = the block; or A = 1, HL = 0 if the size is 0 or there
+;       is no room.
 ;
 ; The directory (BLK_DIR) lists up to MAX_BLOCKS tags with their address and
 ; size; blocks are handed out from BLK_NEXT upward and never freed. A new
 ; block is zeroed. Asking again for an existing tag returns the same block,
-; contents intact -- that is the point of it.
+; contents intact -- that is the point of it. Asking for more than it holds
+; grows it, which the shell does (SHELL_BLOCK_GROW): intact as far as it went,
+; zeroed beyond, and perhaps moved.
 ; ----------------------------------------------------------------------------
 api_block:
         push    ix
@@ -847,14 +849,19 @@ api_block:
         inc     hl
         djnz    @cmp
 
-; Found: fine if it is at least as big as asked.
+; Found: fine if it is at least as big as asked; the shell grows it if not.
+; check_shell above made sure the shell is there to call.
         ld      hl, (ix+7)              ; its size
         lea     de, iy+0
         or      a, a
         sbc     hl, de
-        jr      c, @fail
+        jr      c, @grow
         ld      hl, (ix+4)
         xor     a, a
+        jp      api_out
+
+@grow:
+        call    SHELL_BLOCK_GROW
         jp      api_out
 
 @miss:

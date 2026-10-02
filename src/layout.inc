@@ -25,6 +25,7 @@ HUB_HEADER:     equ     CORE_BASE + 12  ; the client API: see hub.inc
 SHELL_READLINE: equ     SHELL_BASE + $48 ; returns HL = line, or 0 to leave hub
 SHELL_JOB_START: equ    SHELL_BASE + $4C ; A = a job's flags, before it runs
 SHELL_JOB_END:  equ     SHELL_BASE + $50 ; A = its flags, after it has run
+SHELL_BLOCK_GROW: equ   SHELL_BASE + $54 ; IX = a block's entry, IY = its new size
 
 ; ---------------------------------------------------------------------------
 ; Control block. It is not part of the core's image, so copying the core in

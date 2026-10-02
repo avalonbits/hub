@@ -62,7 +62,9 @@ HUB_FAILED_JOB: equ     22
 ; hub_block        HL = 4-byte tag, BC = size
 ;                  HL = a block of memory that keeps its contents between
 ;                  your program's runs, zeroed when first created; 0 if there
-;                  is no room or the tag exists with a smaller size.
+;                  is no room. Asking for more than it holds grows it, the
+;                  contents kept and the rest zeroed; it may move. (Growing
+;                  since 0.4.2; before, a block too small was refused.)
 HUB_BLOCK:      equ     26
 
 ; hub_depth        HL = the number of open frames.

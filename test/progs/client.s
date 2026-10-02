@@ -37,6 +37,13 @@
 ;   U   Print the frame's last result and failed job, and what
 ;       hub_user_screen says.
 ;   S   Print what hub_user_screen says.
+;   g   Ask for block "KEEP" (1 byte, holding 42 from b) with 200 bytes:
+;       other blocks follow it, so it moves. Print its first and last
+;       bytes and whether it moved.
+;   h   Make block "GROW" of 1 byte holding 7 -- the last block -- then ask
+;       for 100: it grows in place. Print the same.
+;   X   Ask for "GROW" with 30000 bytes, more than the area holds: print
+;       whether it was refused, and "GROW"'s first byte after.
 ;
 ; Without hub it prints "no hub" and returns.
 
@@ -58,13 +65,13 @@ start:
         jr      c, @found
         ld      hl, msg_nohub
         call    print
-        jr      finish
+        jp      finish
 
 @found:
         call    skip_spaces
         ld      a, (hl)
         cp      a, 'c'
-        jr      z, count
+        jp      z, count
         cp      a, 'o'
         jp      z, outer
         cp      a, 'i'
@@ -103,6 +110,12 @@ start:
         jp      z, user_back
         cp      a, 'S'
         jp      z, user_screen
+        cp      a, 'g'
+        jp      z, grow_moved
+        cp      a, 'h'
+        jp      z, grow_last
+        cp      a, 'X'
+        jp      z, grow_too_big
 
 finish:
         pop     iy
@@ -254,6 +267,85 @@ keep:
         ld      bc, 1
         ld      a, HUB_BLOCK
         jp      hub
+
+grow_moved:
+        call    keep
+        ld      (old_addr), hl
+        ld      hl, tag_keep
+        ld      bc, 200
+        ld      a, HUB_BLOCK
+        call    hub
+        ld      de, 199
+        call    grown
+        jp      finish
+
+grow_last:
+        ld      hl, tag_grow
+        ld      bc, 1
+        ld      a, HUB_BLOCK
+        call    hub
+        ld      (hl), 7
+        ld      (old_addr), hl
+        ld      hl, tag_grow
+        ld      bc, 100
+        ld      a, HUB_BLOCK
+        call    hub
+        ld      de, 99
+        call    grown
+        jp      finish
+
+grow_too_big:
+        ld      hl, tag_grow
+        ld      bc, 30000
+        ld      a, HUB_BLOCK
+        call    hub_quiet               ; a refusal is what is wanted here
+        ld      de, msg_too_big_given
+        or      a, a
+        jr      z, @said
+        ld      de, msg_too_big_refused
+
+@said:
+        ex      de, hl
+        call    print
+        ld      hl, tag_grow
+        ld      bc, 100
+        ld      a, HUB_BLOCK
+        call    hub
+        ld      a, (hl)
+        call    print_u8
+        call    newline
+        jp      finish
+
+; grown: HL = a block just grown, DE = its last byte's offset. Print
+; "grown: first F, last L, moved" (or "in place", against old_addr).
+grown:
+        push    hl
+        add     hl, de
+        ld      a, (hl)
+        ld      (grow_last_byte), a
+        pop     hl
+        push    hl
+        ld      hl, msg_grown
+        call    print
+        pop     hl
+        push    hl
+        ld      a, (hl)
+        call    print_u8
+        ld      hl, msg_grown_last
+        call    print
+        ld      a, (grow_last_byte)
+        call    print_u8
+        pop     hl
+        ld      de, (old_addr)
+        or      a, a
+        sbc     hl, de
+        ld      hl, msg_in_place
+        jr      z, @where
+        ld      hl, msg_moved
+
+@where:
+        call    print
+        jp      newline
 
 resetting:
         ld      hl, tag_rst
@@ -491,6 +583,18 @@ hub:
 @go:
         jp      (iy)
 
+; hub_quiet: as hub, for a call that is meant to be refused.
+hub_quiet:
+        push    hl
+        ld      hl, (api)
+        ld      de, 0
+        ld      e, a
+        add     hl, de
+        push    hl
+        pop     iy
+        pop     hl
+        jp      (iy)
+
 skip_spaces:
         ld      a, (hl)
         cp      a, ' '
@@ -552,6 +656,15 @@ cmd_not_run:    db      "Echo SHOULD-NOT-RUN", 0
 cmd_failed:     db      "client F", 0
 msg_nohub:      db      "no hub", 13, 10, 0
 tag_keep:       db      "KEEP"
+tag_grow:       db      "GROW"
+old_addr:       dl      0
+grow_last_byte: db      0
+msg_grown:      db      "grown: first ", 0
+msg_grown_last: db      ", last ", 0
+msg_in_place:   db      ", in place", 0
+msg_moved:      db      ", moved", 0
+msg_too_big_given: db   "too big: given; first ", 0
+msg_too_big_refused: db "too big: refused; first ", 0
 tag_tool:       db      "TOOL"
 cmd_not_after_tool: db  "Echo NOT-AFTER-TOOL", 0
 cmd_tool_back:  db      "client T", 0
