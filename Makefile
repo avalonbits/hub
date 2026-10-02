@@ -51,15 +51,20 @@ $(B)/config.inc: FORCE
 		$(GUARDS) $(REPAIR) $(SNAPSHOT) $(CAPTURE) $(PROMPTFONT) $(API_COUNT) > $@.new
 	@cmp -s $@.new $@ && rm $@.new || mv $@.new $@
 
-$(B)/core.bin: src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/config.inc $(ZAP)
+CORE_SRCS  := $(wildcard src/core/*.s)
+SHELL_SRCS := $(wildcard src/shell/*.s)
+
+$(B)/core.bin: src/core.s $(CORE_SRCS) src/mos_api.inc src/layout.inc src/hub.inc $(B)/config.inc $(ZAP)
 	cp src/core.s src/mos_api.inc src/layout.inc src/hub.inc $(B)/
+	rm -rf $(B)/core && cp -r src/core $(B)/core
 	cd $(B) && $(ZAP) -c core.s core.bin > core.log || { cat core.log; exit 1; }
 	@size=$$(stat -c %s $@); if [ $$size -gt $(CORE_MAX) ]; then \
 		echo "core is $$size bytes; it must fit in $(CORE_MAX)"; rm -f $@; exit 1; fi
 
-$(B)/hub.bin: src/hub.s src/mos_api.inc src/layout.inc src/hub.inc src/version.inc \
-		$(B)/config.inc $(B)/core.bin $(ZAP)
+$(B)/hub.bin: src/hub.s $(SHELL_SRCS) src/mos_api.inc src/layout.inc src/hub.inc \
+		src/version.inc $(B)/config.inc $(B)/core.bin $(ZAP)
 	cp src/hub.s src/mos_api.inc src/layout.inc src/hub.inc src/version.inc $(B)/
+	rm -rf $(B)/shell && cp -r src/shell $(B)/shell
 	cd $(B) && $(ZAP) -c hub.s hub.bin > hub.log || { cat hub.log; exit 1; }
 
 $(B)/test/%.bin: test/progs/%.s src/mos_api.inc src/hub.inc $(ZAP)

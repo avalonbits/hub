@@ -51,7 +51,7 @@ CTL_NJOBS:      equ     CTL_BASE + 408  ; jobs in the array
 CTL_NEXT:       equ     CTL_BASE + 409  ; index of the next job to run
 CTL_INSERT:     equ     CTL_BASE + 410  ; where hub_push puts the next job
 CTL_DEPTH:      equ     CTL_BASE + 411  ; open frames
-CTL_JOB:        equ     CTL_BASE + 412  ; 0 while a job runs (CTL_RUNNING), or $FF
+CTL_JOB:        equ     CTL_BASE + 412  ; 0 while a job runs (CTL_RUNNING), or NO_JOB
 CTL_VEC_P:      equ     CTL_BASE + 413  ; vector loop pointer (3)
 
 ; The frame whose continuation is running: its first FRAME_DONE bytes,
@@ -86,6 +86,16 @@ JOB_RESULT:     equ     3               ; (3)
 JOB_CMD:        equ     6               ; the command, zero-terminated
 JOB_CMD_MAX:    equ     JOB_SIZE - JOB_CMD - 1
 MAX_JOBS:       equ     8               ; HUB_MAX_JOBS in hub.inc and hub.h
+
+; "None": in CTL_JOB, no job is running; in FRAME_FAILED and DONE_FAILED, no
+; job failed (which hub_failed_job reports as -1).
+NO_JOB:         equ     $FF
+
+; A job's flags (hub.inc's HUB_* masks) as bit numbers, for BIT.
+FLAG_STOP_BIT:  equ     0               ; HUB_STOP_ON_ERROR
+FLAG_USER_BIT:  equ     1               ; HUB_USER_PROGRAM
+FLAG_PAUSE_BIT: equ     2               ; HUB_PAUSE_AFTER
+FLAG_CONT_BIT:  equ     7               ; HUB_CONTINUATION, set by hub_return_to
 
 ; Scratch for the API calls, which may not keep anything on the caller's
 ; stack between the MOS-free steps of a call.
