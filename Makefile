@@ -35,7 +35,9 @@ ACC     ?= $(HOME)/code/acc/bin/acc     # acc's host build: libc, rt and headers
 
 .PHONY: all test clean FORCE
 
-all: $(B)/hub.bin $(B)/lib/agondev/libhub.a $(B)/lib/acc/libhub.a $(PROGS)
+EXAMPLES := $(addprefix examples/bin/,seq.bin rep.bin see.bin hubinfo.bin)
+
+all: $(B)/hub.bin $(B)/lib/agondev/libhub.a $(B)/lib/acc/libhub.a $(PROGS) $(EXAMPLES)
 
 $(ZAP): $(ZAP_SRCS)
 	@mkdir -p $(dir $@)
@@ -110,9 +112,28 @@ $(B)/test/cclienta.bin: test/c/src/main.c include/hub/hub.h $(B)/lib/acc/libhub.
 	@mkdir -p $(B)/test
 	$(ACC) test/c/src/main.c -DCLIENT_ACC -Iinclude $(B)/lib/acc/libhub.a -o $@ > /dev/null
 
+# The examples, built with agondev against the library as a program outside
+# this repository would be, and kept in examples/bin for people to try.
+examples/bin/%.bin: examples/src/%.c include/hub/hub.h build/lib/agondev/libhub.a
+	@mkdir -p build/ex/$*/src build/ex/$*/include/hub build/ex/$*/lib
+	cp $< build/ex/$*/src/
+	cp include/hub/hub.h build/ex/$*/include/hub/
+	cp build/lib/agondev/libhub.a build/ex/$*/lib/
+	PATH=$(AGONDEV)/bin:$$PATH $(MAKE) -s -C build/ex/$* \
+		-f $(AGONDEV)/config/makefile.inc NAME=$* LIBS=-lhub
+	cp build/ex/$*/bin/$*.bin $@
+
+examples/bin/hubinfo.bin: examples/src/hubinfo.s src/hub.inc $(ZAP)
+	@mkdir -p build/ex/hubinfo
+	cp examples/src/hubinfo.s src/hub.inc build/ex/hubinfo/
+	cd build/ex/hubinfo && $(ZAP) -c hubinfo.s hubinfo.bin > hubinfo.log \
+		|| { cat hubinfo.log; exit 1; }
+	cp build/ex/hubinfo/hubinfo.bin $@
+
 test: all
 	test/run.sh
 	test/screen.sh
+	test/examples.sh
 	test/libs.sh
 
 clean:

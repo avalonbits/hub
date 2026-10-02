@@ -1,25 +1,33 @@
 #!/bin/bash
-# Builds the release zip: unzip it at the root of an SD card and hub, and the
-# library for programs compiled on the Agon, land where they are looked for.
+# Builds a release: three zips, one for people who use hub and one for each
+# compiler a program for hub is built with.
 #
-#   mos/hub.bin                     a moslet, so `hub` works as a command
-#   lib/acc/libhub.a                the client library, for acc on the Agon
-#   lib/acc/include/hub/hub.h       its header; acc searches lib/acc/include
-#                                   for every #include
+#   hub-<version>.zip           unzip at the root of the SD card:
+#       mos/hub.bin                 hub itself
 #
-# A program on the Agon then builds with nothing more than
+#   hub-acc-<version>.zip       for acc. Unzip at the root of the SD card,
+#                               where acc's own release put /lib/acc, and a
+#                               program on the Agon builds with
+#                               `acc main.c /lib/acc/libhub.a`; or anywhere
+#                               on a PC or Mac, for acc there:
+#       lib/acc/libhub.a            the client library
+#       lib/acc/include/hub/        hub.h, hub.inc for zap programs, VERSION
 #
-#   acc main.c /lib/acc/libhub.a
+#   hub-agondev-<version>.zip   for agondev. Unzip in agondev's own directory
+#                               (agondev-config --prefix), which every
+#                               agondev project searches, and a program needs
+#                               only `LIBS := -lhub` in its Makefile:
+#       lib/libhub.a                the client library
+#       include/hub/                hub.h, hub.inc, VERSION
 #
-# and includes <hub/hub.h>. Also builds hub-libs-<version>.tar.gz, the library
-# for agondev and acc on a PC or Mac, with mklibs.sh.
+# VERSION gives hub's version and the commit the release was built from.
 #
 # Usage: ./mkrelease.sh [output directory]   (default: .)
 set -euo pipefail
 cd "$(dirname "$0")"
 
 VERSION=$(sed -n 's/^ *db *"\(.*\)".*/\1/p' src/version.inc)
-DEST=${1:-.}
+DEST=$(cd "${1:-.}" && pwd)
 if [ -z "$VERSION" ]; then
     echo "mkrelease: no version in src/version.inc" >&2
 
@@ -33,19 +41,43 @@ fi
 
 # Built fresh, not whatever is lying in build/. A release made from a stale
 # binary is the kind of mistake that is only found by a user.
-make -s build/hub.bin build/lib/acc/libhub.a >/dev/null
+make -s build/hub.bin build/lib/agondev/libhub.a build/lib/acc/libhub.a >/dev/null
+
+# The commit -- marked -dirty when the tree had changes that commit does not
+# hold, so a release built from work in progress does not claim to be
+# something it is not.
+COMMIT=$(git rev-parse HEAD 2>/dev/null || echo unknown)
+if [ "$COMMIT" != unknown ] && ! git diff --quiet HEAD 2>/dev/null; then
+    COMMIT="$COMMIT-dirty"
+fi
 
 STAGE=$(mktemp -d)
 trap 'rm -rf "$STAGE"' EXIT
 
-mkdir -p "$STAGE/mos" "$STAGE/lib/acc/include/hub"
-cp build/hub.bin "$STAGE/mos/"
-cp build/lib/acc/libhub.a "$STAGE/lib/acc/"
-cp include/hub/hub.h "$STAGE/lib/acc/include/hub/"
+# headers <dir>: the public headers and VERSION into <dir>.
+headers() {
+    mkdir -p "$1"
+    cp include/hub/hub.h src/hub.inc "$1/"
+    printf 'hub %s\ncommit %s\n' "$VERSION" "$COMMIT" > "$1/VERSION"
+}
 
-OUT="$(cd "$DEST" && pwd)/hub-$VERSION.zip"
-rm -f "$OUT"
-(cd "$STAGE" && zip -q -r -X "$OUT" .)
-echo "$OUT"
+# pack <name> <stage dir>: zip the stage dir's contents as <name>.
+pack() {
+    rm -f "$DEST/$1"
+    (cd "$2" && zip -q -r -X "$DEST/$1" .)
+    echo "$DEST/$1"
+}
 
-./mklibs.sh "$DEST"
+mkdir -p "$STAGE/hub/mos"
+cp build/hub.bin "$STAGE/hub/mos/"
+pack "hub-$VERSION.zip" "$STAGE/hub"
+
+mkdir -p "$STAGE/acc/lib/acc"
+cp build/lib/acc/libhub.a "$STAGE/acc/lib/acc/"
+headers "$STAGE/acc/lib/acc/include/hub"
+pack "hub-acc-$VERSION.zip" "$STAGE/acc"
+
+mkdir -p "$STAGE/agondev/lib"
+cp build/lib/agondev/libhub.a "$STAGE/agondev/lib/"
+headers "$STAGE/agondev/include/hub"
+pack "hub-agondev-$VERSION.zip" "$STAGE/agondev"

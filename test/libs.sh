@@ -1,10 +1,13 @@
 #!/bin/bash
-# The library package mklibs.sh builds, as a program on a PC or Mac gets it.
+# The release's zips, as the people they are for use them.
 #
-# The C client is built against the package and nothing else -- by agondev
-# with the lines the README gives, and by acc's host build -- and each build
-# must come out byte for byte the same as the client test/run.sh runs under
-# hub in the emulator. So what the package holds is what was tested.
+# hub-agondev-<version>.zip is unzipped into a copy of agondev's own
+# directory, and the C client is built by a project whose Makefile names
+# nothing but `LIBS := -lhub`. hub-acc-<version>.zip is unzipped, and acc's
+# host build builds the client from it. Each build must come out byte for
+# byte the same as the client test/run.sh runs under hub in the emulator, so
+# what the zips hold is what was tested. (test/run.sh unzips hub's zip and
+# the acc zip onto a card, and has acc build the client on the Agon.)
 #
 # Needs agondev (AGONDEV, default ~/agondev) and acc's host build (ACC).
 set -uo pipefail
@@ -16,56 +19,53 @@ ACC=${ACC:-$HOME/code/acc/bin/acc}
 status=0
 check() {
     if [ "$2" = "$3" ]; then
-        printf 'PASS  %-52s %s\n' "$1" "$2"
+        printf 'PASS  %-56s %s\n' "$1" "$2"
     else
-        printf 'FAIL  %-52s got %s, want %s\n' "$1" "$2" "$3"
+        printf 'FAIL  %-56s got %s, want %s\n' "$1" "$2" "$3"
         status=1
     fi
 }
+same() { cmp -s "$1" "$2" && echo same || echo different; }
+contents() { unzip -Z1 "$1" | grep -v '/$' | sort | tr '\n' ' '; }
 
 W=$(mktemp -d)
 trap 'rm -rf "$W"' EXIT
 
 make -s >/dev/null 2>&1 || { echo "FAIL  libs: the build failed"; exit 1; }
-TGZ=$(./mklibs.sh "$W" 2>/dev/null) || { echo "FAIL  libs: mklibs.sh failed"; exit 1; }
-tar -C "$W" -xzf "$TGZ"
-VERSION=$(sed -n 's/^ *db *"\(.*\)".*/\1/p' src/version.inc)
-PKG="$W/hub-libs-$VERSION"
+./mkrelease.sh "$W" >/dev/null 2>&1 || { echo "FAIL  libs: mkrelease.sh failed"; exit 1; }
+V=$(sed -n 's/^ *db *"\(.*\)".*/\1/p' src/version.inc)
 
-check "the package is named after src/version.inc" "$(basename "$TGZ")" "hub-libs-$VERSION.tar.gz"
-check "  and holds the headers and both archives" \
-      "$(cd "$PKG" && find . -type f | sort | tr '\n' ' ')" \
-      "./VERSION ./include/hub/hub.h ./include/hub/hub.inc ./lib/acc/libhub.a ./lib/agondev/libhub.a "
+check "hub's zip holds hub" "$(contents "$W/hub-$V.zip")" "mos/hub.bin "
+check "the acc zip holds the library and headers" "$(contents "$W/hub-acc-$V.zip")" \
+      "lib/acc/include/hub/VERSION lib/acc/include/hub/hub.h lib/acc/include/hub/hub.inc lib/acc/libhub.a "
+check "the agondev zip holds them too" "$(contents "$W/hub-agondev-$V.zip")" \
+      "include/hub/VERSION include/hub/hub.h include/hub/hub.inc lib/libhub.a "
 want="$(git rev-parse HEAD)"
 git diff --quiet HEAD || want="$want-dirty"
-check "  and names the commit it was built from" \
-      "$(sed -n 's/^commit //p' "$PKG/VERSION")" "$want"
+unzip -q "$W/hub-agondev-$V.zip" include/hub/VERSION -d "$W/v"
+check "  and VERSION names the commit they were built from" \
+      "$(sed -n 's/^commit //p' "$W/v/include/hub/VERSION")" "$want"
 
-# agondev: a project using only the package, set up as the README says.
-d="$W/agondev"
-mkdir -p "$d/src"
-cp test/c/src/main.c "$d/src/"
-cat > "$d/Makefile" <<MK
-NAME=cclient
-include \$(shell agondev-config --makefile)
-CFLAGS += -I$PKG/include
-PROJECTLIBDIR := $PKG/lib/agondev
-LIBS := -lhub
-MK
-(cd "$d" && PATH="$AGONDEV/bin:$PATH" make >/dev/null 2>&1)
-if cmp -s "$d/bin/cclient.bin" build/test/cclient.bin; then
-    check "agondev builds the tested client from the package" same same
-else
-    check "agondev builds the tested client from the package" different same
-fi
+# agondev: its own directory, copied -- the tools linked, include and lib
+# copied, so unzipping into it leaves the real one alone.
+T="$W/agondev"
+mkdir -p "$T"
+ln -s "$AGONDEV/bin" "$AGONDEV/config" "$T/"
+cp -r "$AGONDEV/include" "$AGONDEV/lib" "$T/"
+unzip -q "$W/hub-agondev-$V.zip" -d "$T"
+mkdir -p "$W/agclient/src"
+cp test/c/src/main.c "$W/agclient/src/"
+printf 'NAME=cclient\ninclude $(shell agondev-config --makefile)\nLIBS := -lhub\n' \
+    > "$W/agclient/Makefile"
+(cd "$W/agclient" && AGONDEV_TOOLCHAIN="$T" PATH="$AGONDEV/bin:$PATH" make >/dev/null 2>&1)
+check "agondev, with the zip in its directory, builds the tested client" \
+      "$(same "$W/agclient/bin/cclient.bin" build/test/cclient.bin)" same
 
-# acc on the host: the package's header directory and archive, named.
-"$ACC" test/c/src/main.c -DCLIENT_ACC -I"$PKG/include" "$PKG/lib/acc/libhub.a" \
+# acc on the host, from the unzipped files.
+unzip -q "$W/hub-acc-$V.zip" -d "$W/acc"
+"$ACC" test/c/src/main.c -DCLIENT_ACC -I"$W/acc/lib/acc/include" "$W/acc/lib/acc/libhub.a" \
     -o "$W/cclienta.bin" >/dev/null 2>&1
-if cmp -s "$W/cclienta.bin" build/test/cclienta.bin; then
-    check "acc builds the tested client from the package" same same
-else
-    check "acc builds the tested client from the package" different same
-fi
+check "acc, from the acc zip, builds the tested client" \
+      "$(same "$W/cclienta.bin" build/test/cclienta.bin)" same
 
 exit $status

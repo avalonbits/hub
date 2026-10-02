@@ -400,7 +400,8 @@ fi
 
 # --- the release, as a card gets it -------------------------------------------
 
-# The release zip unzipped over acc's own layout, as a user installs the two:
+# hub's zip and its acc zip unzipped over acc's own layout, as a user who
+# writes programs on the Agon installs the three:
 # the client, compiled on the Agon by acc, finds <hub/hub.h> without -I, links
 # /lib/acc/libhub.a, and runs under hub like the builds above.
 if [ ! -f "$ACC_BIN" ]; then
@@ -416,6 +417,7 @@ else
     cp "$ACC_HOME/bin/libc.a" "$ACC_HOME/bin/rt.a" "$sd/lib/acc/"
     cp -r "$ACC_HOME/include" "$sd/lib/acc/include"
     unzip -q -o "$rel/hub-$VERSION.zip" -d "$sd"
+    unzip -q -o "$rel/hub-acc-$VERSION.zip" -d "$sd"
     cp "$ROOT/build/test/fail.bin" "$sd/bin/"       # the job run 3 fails with
     cp "$ROOT/test/c/src/main.c" "$sd/main.c"
     printf 'acc /main.c -DCLIENT_CARD /lib/acc/libhub.a -o /bin/cclientc.bin\r\ncclientc\r\n' \
@@ -426,7 +428,7 @@ else
 
     grep -qxF "hub $VERSION" <<< "$out" && pass "the release zip's hub starts" \
         || fail "the release zip's hub starts"
-    client_check cclientc "acc on the Agon from the release zip"
+    client_check cclientc "acc on the Agon from the release zips"
 fi
 
 # --- controls: each check above must fail without its feature ---------------

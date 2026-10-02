@@ -11,15 +11,11 @@ every program, whether that program used hub or not.
 
 Download `hub-<version>.zip` from the
 [releases](https://github.com/avalonbits/hub/releases) and unzip it at the
-root of the SD card:
-
-    /mos/hub.bin                  hub itself
-    /lib/acc/libhub.a             the client library, for programs built with acc
-    /lib/acc/include/hub/hub.h    its header
+root of the SD card. That puts hub in `/mos/hub.bin`.
 
 hub needs MOS 3.0.2. Showing a program's screen again after it ends (see
-`hub_user_screen` below) needs VDP 2.2.0 or later; everything else works on
-any VDP MOS 3.0.2 runs with.
+`hub_user_screen` in the API) needs VDP 2.2.0 or later; everything else works
+on any VDP MOS 3.0.2 runs with.
 
 ## Using hub
 
@@ -63,83 +59,47 @@ A second `hub` started while hub is running says so and does nothing.
 
 ## Writing programs for hub
 
-A program asks hub for work while it runs; nothing happens until it returns.
-A program that wants to run a command and then come back:
+A program asks hub for work while it runs -- run these commands, then start
+me again -- and keeps what it needs in memory hub holds for it. Nothing
+happens until the program returns. A program that runs two commands and
+comes back:
 
 ```c
 #include <hub/hub.h>
 
-int main(void)
-{
     if (hub_present()) {
-        struct state *s = hub_block("MYPG", sizeof *s);    /* survives the run */
-
-        save_state(s);
-        hub_enter("MYPG");                                 /* open a frame */
-        hub_push("acc hello.c", HUB_STOP_ON_ERROR);        /* the command */
-        hub_return_to("myprog -resume");                   /* then back here */
-
+        hub_enter("BLD ");                                 /* open a frame */
+        hub_push("acc -c main.c", HUB_STOP_ON_ERROR);      /* the commands */
+        hub_push("acc main.o -o prog.bin", HUB_STOP_ON_ERROR);
+        hub_return_to("build -r");                         /* then back here */
         return 0;                                          /* hub takes over */
     }
-    /* ... and keep working without hub, where hub_present() is false */
-}
 ```
 
-When `myprog -resume` runs, `hub_last_result()` and `hub_failed_job()` say
-how the commands went. The calls, in [`include/hub/hub.h`](include/hub/hub.h):
+[`docs/API.md`](docs/API.md) describes every call, the patterns they make,
+and how to change an existing program to use hub.
 
-| Call | Does |
+Each release has the library for both of the Agon's C compilers:
+
+| Zip | For | Unzip |
+|---|---|---|
+| `hub-acc-<version>.zip` | acc, on the Agon or a PC or Mac | at the SD card's root, over acc's `/lib/acc`; a program builds with `acc main.c /lib/acc/libhub.a` |
+| `hub-agondev-<version>.zip` | agondev | in agondev's directory (`agondev-config --prefix`); a program's Makefile adds `LIBS := -lhub` |
+
+Both have `hub.h`, and `hub.inc` for programs written with zap.
+
+### Examples
+
+[`examples/`](examples) has small programs that use hub, each useful as it
+is, with their source in `examples/src` and built in `examples/bin` -- copy
+those to `/bin` on the card:
+
+| Program | Does |
 |---|---|
-| `hub_present()` | true if hub is running; call it first |
-| `hub_enter(tag)` | open a frame, named by a 4-character tag |
-| `hub_push(cmd, flags)` | queue a command in it, as typed at the prompt |
-| `hub_return_to(cmd)` | the frame's continuation: runs last, even after a failure |
-| `hub_last_result()` | in the continuation: the result of the frame's last command |
-| `hub_failed_job()` | in the continuation: which command stopped the frame, or -1 |
-| `hub_block(tag, size)` | named memory that keeps its contents between runs |
-| `hub_depth()` | how many frames are open |
-| `hub_resumed()` | in the continuation: 1 if a reset cut the frame short |
-| `hub_user_screen()` | the mode of the last user program's captured screen, or -1 |
-
-Flags for `hub_push`:
-
-| Flag | Does |
-|---|---|
-| `HUB_STOP_ON_ERROR` | a non-zero result skips the rest of the frame, up to its continuation |
-| `HUB_USER_PROGRAM` | run it on the screen hub's prompt has -- mode, font, colours, cursor -- and put that back afterwards; capture what it leaves for `hub_user_screen` |
-| `HUB_PAUSE_AFTER` | afterwards, "Press a key to return" |
-
-A queue holds eight commands waiting to run, continuations included; a
-command is at most 93 characters. Programs written with zap use
-[`src/hub.inc`](src/hub.inc), which documents the same calls in assembly;
-[`test/progs/client.s`](test/progs/client.s) uses all of them.
-
-### Linking
-
-On the Agon, with acc installed from its own release and hub's zip unzipped
-over it, a program builds with nothing more than
-
-    acc main.c /lib/acc/libhub.a
-
-On a PC or Mac, `hub-libs-<version>.tar.gz`, also in the releases, has the
-library for both compilers:
-
-    include/hub/hub.h         the C API
-    include/hub/hub.inc       the same for zap programs
-    lib/agondev/libhub.a      for agondev
-    lib/acc/libhub.a          for acc
-    VERSION                   hub's version and the commit it was built from
-
-With agondev, add three lines after the `include` of agondev's makefile,
-which sets `CFLAGS` and `PROJECTLIBDIR` itself:
-
-    include $(shell agondev-config --makefile)
-
-    CFLAGS += -I<dir>/include
-    PROJECTLIBDIR := <dir>/lib/agondev
-    LIBS := -lhub
-
-With acc on a PC or Mac: `acc main.c -I<dir>/include <dir>/lib/acc/libhub.a`.
+| `seq <cmd> ; <cmd> ...` | runs commands one after another, stopping at the first that fails, and says which |
+| `rep <n> <cmd>` | runs a command n times and counts the failures |
+| `see <cmd>` | runs a program, pauses, and lets you see its screen again |
+| `hubinfo` | says whether hub is running, its API version and how many frames are open (assembly) |
 
 ## How it works
 
@@ -159,7 +119,8 @@ host from its source. The tests run on
 |---|---|
 | [`test/run.sh`](test/run.sh) | hub in the CLI emulator, through scripts on the card; and, for each safeguard, a build without it that shows the check fails |
 | [`test/screen.sh`](test/screen.sh) | the screen and font a user program gets, and its captured screen, on the full emulator's real VDP (SDL's dummy video driver) |
-| [`test/libs.sh`](test/libs.sh) | the library package, built against by agondev and acc |
+| [`test/examples.sh`](test/examples.sh) | the examples, under hub and without it, and built by acc too |
+| [`test/libs.sh`](test/libs.sh) | the release's zips, as a developer uses each with agondev or acc |
 
 The tools are found through `ZAP_SRC` (zap's source, default `~/code/zap`),
 `AGONDEV` (default `~/agondev`), `AGON_EMU` (the emulator release, default
@@ -170,6 +131,7 @@ card).
 
 ## Releasing
 
-    ./mkrelease.sh    # hub-<version>.zip and hub-libs-<version>.tar.gz
+    ./mkrelease.sh    # hub-<version>.zip, hub-acc-<version>.zip
+                      # and hub-agondev-<version>.zip
 
 The version is written once, in [`src/version.inc`](src/version.inc).
