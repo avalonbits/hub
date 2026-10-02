@@ -1,7 +1,7 @@
 ; hubinfo: say whether hub is running, which API it offers, and how many
 ; frames are open -- written with zap, using hub.inc.
 ;
-;       hub API 0.4, 9 calls, 0 frames open
+;       hub API 0.5, 9 calls, 0 frames open
 ;
 ; What it shows: finding hub from assembly. Read the Number variable Hub$API
 ; with MOS's readvarval, check that the variable it answers for is really

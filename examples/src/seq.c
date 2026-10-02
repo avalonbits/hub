@@ -116,7 +116,8 @@ static int start(int argc, char **argv)
     return 0;                           /* hub runs the commands now */
 }
 
-/* The continuation: say how it went. */
+/* The continuation: say how it went, and fail if a command did -- run by
+ * another program, seq then fails as a job of its frame. */
 static int report(void)
 {
     struct seq_state *s = state();
@@ -135,7 +136,7 @@ static int report(void)
     printf("seq: command %d (%s) failed with %d%s\r\n", failed + 1, s->cmd[failed],
            hub_last_result(), hub_resumed() ? ", cut short by a reset" : "");
 
-    return 0;
+    return FAILED;
 }
 
 int main(int argc, char **argv)

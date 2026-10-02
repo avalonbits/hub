@@ -108,7 +108,7 @@ next_job:
         ld      hl, (CTL_RC)
         ld      (ix+JOB_RESULT), hl
         bit     FLAG_CONT_BIT, (ix+JOB_FLAGS)
-        jr      nz, @done               ; a continuation's frame is closed
+        jr      nz, @cont
 
         ld      a, (ix+JOB_FRAME)
         call    frame_addr              ; IY = the job's frame
@@ -129,6 +129,16 @@ next_job:
         scf
 
         ret
+
+; A continuation has run. Its frame closed as it started, so the result has
+; nowhere to go here; the shell passes it to the job that opened the frame,
+; and says if that job's frame must now skip to its continuation.
+@cont:
+        call    check_shell             ; the continuation may be a moslet
+        call    SHELL_CONT_DONE         ; A = a frame to skip, or NO_JOB
+        cp      a, NO_JOB
+        call    nz, skip_frame
+        jr      @done
 
 ; ----------------------------------------------------------------------------
 ; drop_jobs: drop the first A jobs, moving the rest to the front of the array.

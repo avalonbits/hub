@@ -144,6 +144,17 @@ itself for ever: each run opens one new frame at the same depth.
 the rest of its frame, and any frames nested in it, up to its continuation
 (`skip_frame`).
 
+**Nested results.** A job that is itself a hub client returns at first
+having only queued work, usually with 0; its real result is what its last
+continuation returns, after its own frame has run. So `hub_enter` records in
+the new frame which job opened it and that job's flags -- unless the caller
+is a continuation opening the next round of a chain, which keeps the record
+of the chain's first frame. When a continuation ends without opening a next
+round, the shell's `cont_done` makes its result the opener's result in the
+frame one out, and if the opener was pushed with `HUB_STOP_ON_ERROR` and the
+result isn't 0, skips that frame to its continuation, as if the job had
+failed directly.
+
 **The running job.** A job leaves the queue as it starts: its header goes to
 the control block and its command to the command buffer. All eight slots are
 then free for what it pushes -- which matters to a program that is itself
@@ -232,7 +243,7 @@ in the core:
 
     +0  "HUB"         magic
     +3  0             major version
-    +4  4             minor version
+    +4  5             minor version
     +5  9             number of entries
     +6  JP hub_enter  one 4-byte jump per call, in a fixed order
 

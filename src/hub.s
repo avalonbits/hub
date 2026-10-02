@@ -30,6 +30,8 @@
         jp      job_start               ; SHELL_JOB_START
         jp      job_end                 ; SHELL_JOB_END
         jp      block_grow              ; SHELL_BLOCK_GROW
+        jp      report_error            ; SHELL_REPORT
+        jp      cont_done               ; SHELL_CONT_DONE
 
 LINE_BUF:       equ     SHELL_VARS              ; 256
 PROMPT_BUF:     equ     SHELL_VARS + 256        ; 128
@@ -44,6 +46,7 @@ NUM_DIG:        equ     SHELL_VARS + 393        ; 1: the digit being added
         INCLUDE "shell/lines.s"
         INCLUDE "shell/jobs.s"
         INCLUDE "shell/grow.s"
+        INCLUDE "shell/results.s"
         INCLUDE "shell/font.s"
         INCLUDE "shell/script.s"
         INCLUDE "shell/text.s"

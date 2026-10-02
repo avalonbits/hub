@@ -42,6 +42,11 @@
 ;       bytes and whether it moved.
 ;   h   Make block "GROW" of 1 byte holding 7 -- the last block -- then ask
 ;       for 100: it grows in place. Print the same.
+;   n   Start a chain of two rounds: a frame with "Echo n-round" and the
+;       continuation "client N".
+;   N   The continuation. The first time, queue the next round the same way
+;       and return 19 -- a middle round's result, which must not count; the
+;       second time, print "n-chain done" and return 0, the chain's result.
 ;   X   Ask for "GROW" with 30000 bytes, more than the area holds: print
 ;       whether it was refused, and "GROW"'s first byte after.
 ;
@@ -114,6 +119,10 @@ start:
         jp      z, grow_moved
         cp      a, 'h'
         jp      z, grow_last
+        cp      a, 'n'
+        jp      z, chain_start
+        cp      a, 'N'
+        jp      z, chain_next
         cp      a, 'X'
         jp      z, grow_too_big
 
@@ -293,6 +302,49 @@ grow_last:
         ld      de, 99
         call    grown
         jp      finish
+
+chain_start:
+        ld      hl, tag_ncnt
+        ld      bc, 1
+        ld      a, HUB_BLOCK
+        call    hub
+        ld      (hl), 0
+        call    chain_round
+        jp      finish
+
+chain_next:
+        ld      hl, tag_ncnt
+        ld      bc, 1
+        ld      a, HUB_BLOCK
+        call    hub
+        inc     (hl)
+        ld      a, (hl)
+        cp      a, 2
+        jr      nc, @last
+        call    chain_round
+        pop     iy                      ; as finish, but returning 19
+        pop     ix
+        ld      hl, 19
+
+        ret
+
+@last:
+        ld      hl, msg_chain_done
+        call    print
+        jp      finish
+
+; chain_round: a frame with "Echo n-round" and the continuation "client N".
+chain_round:
+        ld      hl, tag_ncnt
+        ld      a, HUB_ENTER
+        call    hub
+        ld      hl, cmd_n_round
+        ld      c, 0
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_n_next
+        ld      a, HUB_RETURN_TO
+        jp      hub
 
 grow_too_big:
         ld      hl, tag_grow
@@ -657,6 +709,10 @@ cmd_failed:     db      "client F", 0
 msg_nohub:      db      "no hub", 13, 10, 0
 tag_keep:       db      "KEEP"
 tag_grow:       db      "GROW"
+tag_ncnt:       db      "NCNT"
+cmd_n_round:    db      "Echo n-round", 0
+cmd_n_next:     db      "client N", 0
+msg_chain_done: db      "n-chain done", 13, 10, 0
 old_addr:       dl      0
 grow_last_byte: db      0
 msg_grown:      db      "grown: first ", 0

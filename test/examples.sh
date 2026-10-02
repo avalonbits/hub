@@ -29,7 +29,8 @@ boot() {
     cp "$EMU/sdcard/MOS.bin" "$EMU/sdcard/firmware.bin" "$sd/"
     mkdir -p "$sd/bin"
     cp "$ROOT/build/hub.bin" "$sd/mos/"
-    cp "$ROOT"/examples/bin/*.bin "$ROOT/build/test/hello.bin" "$ROOT/build/test/fail.bin" "$sd/bin/"
+    cp "$ROOT"/examples/bin/*.bin "$ROOT/build/test/hello.bin" "$ROOT/build/test/fail.bin" \
+        "$ROOT/build/test/client.bin" "$sd/bin/"
     [ -n "${EXTRA:-}" ] && cp -r "$EXTRA"/. "$sd/"
     cat > "$sd/script.txt"
     printf "$2" > "$sd/autoexec.txt"
@@ -59,10 +60,14 @@ retry 3 hello
 retry 2 fail
 onfail fail ; hello
 onfail hello ; fail
+seq retry 2 fail ; hello
+seq rep 2 fail ; hello
+seq retry 3 hello ; hubinfo
+seq client n ; hello
 SCRIPT
 )
 
-has "$out" "hub API 0.4, 9 calls, 0 frames open" \
+has "$out" "hub API 0.5, 9 calls, 0 frames open" \
     && pass "hubinfo finds hub from assembly and calls it" \
     || fail "hubinfo finds hub from assembly and calls it"
 
@@ -102,6 +107,44 @@ if has "$nest" "rep: 2 runs, 0 failed" && has "$nest" "9 calls, 1 frames open" \
     pass "seq and rep nest: rep's frames run inside seq's"
 else
     fail "seq and rep nest: rep's frames run inside seq's"
+fi
+
+# A job that is itself a hub client counts with its final result: what its
+# last continuation returns. seq's first command, retry, returns 0 at first,
+# having only queued its tries; when it gives up with 100, seq's frame stops
+# there, as for any failing command, and hello doesn't run. The same with
+# rep, which fails when any of its runs did. A chain that ends well lets seq
+# carry on.
+nested=$(sed -n '/^hub> seq retry 2 fail ; hello$/,/^hub> /p' <<< "$out")
+if has "$nested" "seq: command 1 (retry 2 fail) failed with 100" \
+   && ! has "$nested" "hello from a child"; then
+    pass "a nested client's final result stops the frame that ran it"
+else
+    fail "a nested client's final result stops the frame that ran it"
+fi
+nested=$(sed -n '/^hub> seq rep 2 fail ; hello$/,/^hub> /p' <<< "$out")
+if has "$nested" "seq: command 1 (rep 2 fail) failed with 100" \
+   && ! has "$nested" "hello from a child"; then
+    pass "  rep's too"
+else
+    fail "  rep's too"
+fi
+nested=$(sed -n '/^hub> seq retry 3 hello ; hubinfo$/,/^hub> /p' <<< "$out")
+if has "$nested" "retry: worked after 1 tries" && has "$nested" "frames open" \
+   && has "$nested" "seq: 2 commands done"; then
+    pass "  and one that ends well lets the frame carry on"
+else
+    fail "  and one that ends well lets the frame carry on"
+fi
+
+# Only the round that ends a chain counts: hub's test client returns 19
+# from a middle round, while it queues the next, and 0 from the last.
+nested=$(sed -n '/^hub> seq client n ; hello$/,/^hub> /p' <<< "$out")
+if has "$nested" "n-chain done" && has "$nested" "hello from a child" \
+   && has "$nested" "seq: 2 commands done"; then
+    pass "  a middle round's result doesn't count, only the chain's last"
+else
+    fail "  a middle round's result doesn't count, only the chain's last"
 fi
 
 # The assembly examples that call the library, as agondev built them.

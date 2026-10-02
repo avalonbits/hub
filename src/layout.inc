@@ -26,6 +26,9 @@ SHELL_READLINE: equ     SHELL_BASE + $48 ; returns HL = line, or 0 to leave hub
 SHELL_JOB_START: equ    SHELL_BASE + $4C ; A = a job's flags, before it runs
 SHELL_JOB_END:  equ     SHELL_BASE + $50 ; A = its flags, after it has run
 SHELL_BLOCK_GROW: equ   SHELL_BASE + $54 ; IX = a block's entry, IY = its new size
+SHELL_REPORT:   equ     SHELL_BASE + $58 ; print MOS's message for CTL_RC
+SHELL_CONT_DONE: equ    SHELL_BASE + $5C ; a continuation has run: pass its
+                                         ; result on; A = a frame to skip
 
 ; ---------------------------------------------------------------------------
 ; Control block. It is not part of the core's image, so copying the core in
@@ -68,16 +71,19 @@ CTL_BLKPATH:    equ     CTL_BASE + 428  ; where they are saved: hub.bin's path,
 CTL_VECTORS:    equ     CTL_BASE + 492  ; 48 interrupt handlers (144)
 
 CTL_FRAMES:     equ     CTL_BASE + 636  ; MAX_FRAMES frames
-FRAME_SIZE:     equ     10
+FRAME_SIZE:     equ     12
 FRAME_TAG:      equ     0               ; 4 bytes, the client's name
 FRAME_RESULT:   equ     4               ; result of its last job (3)
 FRAME_FAILED:   equ     7               ; index of the job that stopped it, or $FF
 FRAME_RESET:    equ     8               ; 1 if a reset cut its job short
 FRAME_COUNT:    equ     9               ; jobs pushed so far
 FRAME_DONE:     equ     9               ; bytes copied to CTL_DONE
+FRAME_OPENER:   equ     10              ; index, in its own frame, of the job
+                                        ; that opened this one, or NO_JOB
+FRAME_OPFLAGS:  equ     11              ; and that job's flags
 MAX_FRAMES:     equ     6
 
-CTL_JOBS:       equ     CTL_BASE + 696  ; MAX_JOBS jobs
+CTL_JOBS:       equ     CTL_BASE + 708  ; MAX_JOBS jobs
 JOB_SIZE:       equ     100
 JOB_FLAGS:      equ     0
 JOB_FRAME:      equ     1               ; frame that pushed it

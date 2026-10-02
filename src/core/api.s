@@ -33,6 +33,26 @@ api_enter:
         ld      (iy+FRAME_FAILED), NO_JOB
         ld      (iy+FRAME_RESET), 0
         ld      (iy+FRAME_COUNT), 0
+
+; Who opened it, so that what its last continuation returns can count as
+; that job's result (see cont_done in the shell). A typed line is no job.
+; A continuation opening the next round of a chain leaves the record as it
+; is: the slot is the one its own frame used, and the chain belongs to the
+; job that started it.
+        ld      a, (CTL_JOB)
+        cp      a, NO_JOB
+        jr      z, @opener              ; A = NO_JOB: opened by a line
+        ld      hl, CTL_RUNNING + JOB_FLAGS
+        bit     FLAG_CONT_BIT, (hl)
+        jr      nz, @counted            ; a chain's next round: keep it
+        ld      a, (hl)
+        ld      (iy+FRAME_OPFLAGS), a
+        ld      a, (CTL_RUNNING + JOB_INDEX)
+
+@opener:
+        ld      (iy+FRAME_OPENER), a
+
+@counted:
         ld      hl, CTL_DEPTH
         inc     (hl)
         xor     a, a

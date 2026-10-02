@@ -51,7 +51,9 @@ HUB_PUSH:       equ     10
 HUB_RETURN_TO:  equ     14
 
 ; hub_last_result  In a continuation: HL = the result of the last job of the
-;                  frame it closes. Anywhere else: 0.
+;                  frame it closes. Anywhere else: 0. A job that is itself a
+;                  hub client counts with what its last continuation
+;                  returned (since 0.5).
 HUB_LAST_RESULT: equ    18
 
 ; hub_failed_job   In a continuation: HL = the index (from 0, in push order)

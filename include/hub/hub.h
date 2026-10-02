@@ -73,7 +73,9 @@ int hub_return_to(const char *cmd);
 
 /* In a continuation: the result of the last job of the frame it closes, and
  * the index (in push order) of the job that stopped that frame, or -1.
- * Anywhere else -- a program started afresh -- 0 and -1. */
+ * Anywhere else -- a program started afresh -- 0 and -1. A job that is
+ * itself a hub client counts with its final result: what its last
+ * continuation returned (since hub 0.5). */
 int hub_last_result(void);
 int hub_failed_job(void);
 

@@ -244,11 +244,13 @@ all of it -- its jobs and its continuation -- runs before your next job. An
 IDE can run a debugger, which runs the program and comes back to itself,
 before the IDE's continuation runs.
 
-The job's result, as your frame sees it, is what that program returned the
-first time, when it queued its work -- usually 0. What its continuation
-returns at the end stays in its own frame. So `seq retry 3 make ; run`
-carries on to `run` even when `retry` gives up, and a job that should stop
-your frame on failure must fail in its first run.
+Such a job's result, as your frame sees it, is its final one: what its last
+continuation returns, once its own frame has run -- the first run usually
+returns 0, having only queued work. A program that chains to itself counts
+the same way: only the round that queues no next one counts. So
+`seq retry 3 make ; run` stops before `run` when `retry` gives up, and a
+program that wants its caller to see it fail returns non-zero from its last
+continuation. (Since hub 0.5.)
 
 **Run the user's program.** Push it with `HUB_USER_PROGRAM`, and
 `HUB_PAUSE_AFTER` if its output should stay on screen until a key. Don't
@@ -319,7 +321,7 @@ address of its API header:
 
     +0  "HUB"        HUB_MAGIC
     +3  major        HUB_MAJOR      0
-    +4  minor        HUB_MINOR      4
+    +4  minor        HUB_MINOR      5
     +5  calls        HUB_COUNT      9
     +6  JP ...       one 4-byte jump per call
 
@@ -345,6 +347,7 @@ C library does that for `hub_user_screen`.
 | 0.4.0 | 0.4 | `hub_user_screen` |
 | 0.4.1 | 0.4 | `HUB_USER_PROGRAM` gives the prompt's font, and puts the prompt's screen back afterwards |
 | 0.4.2 | 0.4 | `hub_block` grows a block |
+| 0.5.0 | 0.5 | a job that is itself a hub client counts with its final result, what its last continuation returns |
 
 ## Limits
 

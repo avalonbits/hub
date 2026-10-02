@@ -1,4 +1,4 @@
-; core/cleanup.s -- After every command: the guards, and MOS's message for a failure.
+; core/cleanup.s -- After every command: the guards, and reading its result.
 ;
 ; Part of the core; core.s includes it, in order.
 
@@ -132,27 +132,21 @@ stand_in:
         ret
 
 ; ----------------------------------------------------------------------------
-; report: print MOS's message for a failed command, as MOS's prompt does.
+; report: read the command's result, and have MOS's message for a failure
+; printed, as MOS's prompt does.
 ;
 ; In:   nothing; reads the variable Try$ReturnCode that Try just set.
 ; Out:  CTL_RC holds the result (0 if the variable couldn't be read).
 ;       Clobbers everything a MOS call may.
 ;
-; MOS's own loop (main.c) prints "\n\r<message>\n\r" when a command returns a
-; non-zero code that has an entry in its message table, and nothing at all
-; for 0 or for codes past the table. This does the same, using MOS's table
-; through mos_getError rather than a copy of it.
-;
-; Note that the code is not always what the program returned: when a program
-; found on the run path returns 1, 4 or 5, mos_exec replaces it with 20,
-; "Invalid command", since it can't tell a failing program from a missing
-; one. MOS's prompt shows the same thing, so hub does too.
+; The message is the shell's to print (report_error, in shell/jobs.s): the
+; core keeps only what it must. The command may have been a moslet that
+; loaded over the shell, so the shell is checked first.
 ;
 ; readvarval (API 0x31) arguments:
 ;   HL = variable name        IX = where to put the value
 ;   DE = size of that buffer  IY = 0 (not iterating over several variables)
 ;   C  = 0 (the raw value: a Number comes back as its 3 bytes)
-; ----------------------------------------------------------------------------
 report:
         ld      hl, 0
         ld      (CTL_RC), hl            ; 0 unless the read succeeds
@@ -170,24 +164,5 @@ report:
         call    hl_is_zero
         ret     z                       ; success: MOS prints nothing
 
-        ld      de, MOS_ERRORS
-        or      a, a
-        sbc     hl, de
-        ret     nc                      ; past MOS's table: MOS prints nothing
-
-; The code is below 27, so its low byte is all of it. CTL_CMD has served its
-; purpose and doubles as the buffer for the message.
-        ld      a, (CTL_RC)
-        ld      e, a                    ; E = the error code
-        ld      hl, CTL_CMD             ; HL = buffer
-        ld      bc, CMD_MAX             ; BC = its size
-        ld      a, mos_getError
-        rst.lil $08
-
-        ld      hl, nlcr
-        call    print
-        ld      hl, CTL_CMD
-        call    print
-        ld      hl, nlcr
-
-        jp      print                   ; tail call: print returns for us
+        call    check_shell
+        jp      SHELL_REPORT

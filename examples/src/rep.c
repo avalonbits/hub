@@ -97,7 +97,7 @@ static int next(void)
     }
     printf("rep: %d run%s, %d failed\r\n", s->done, s->done == 1 ? "" : "s", s->failed);
 
-    return 0;
+    return s->failed > 0 ? FAILED : 0;  /* what a frame running rep sees */
 }
 
 int main(int argc, char **argv)

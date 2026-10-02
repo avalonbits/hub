@@ -28,7 +28,7 @@ place:
 | From | To | Through |
 |---|---|---|
 | shell | core | `CORE_MAIN`, `CORE_SUM`, `CORE_INIT` ([`core/entry.s`](core/entry.s)) |
-| core | shell | `SHELL_READLINE`, `SHELL_JOB_START`, `SHELL_JOB_END`, `SHELL_BLOCK_GROW` (the jumps at the top of [`hub.s`](hub.s)) |
+| core | shell | `SHELL_READLINE`, `SHELL_JOB_START`, `SHELL_JOB_END`, `SHELL_BLOCK_GROW`, `SHELL_REPORT`, `SHELL_CONT_DONE` (the jumps at the top of [`hub.s`](hub.s)) |
 | programs | core | the API header that `Hub$API` points at ([`core/entry.s`](core/entry.s)) |
 
 Both are listed in [`layout.inc`](layout.inc), with every address and every
@@ -46,7 +46,7 @@ The core, in the order [`core.s`](core.s) includes them:
 | [`core/scheduler.s`](core/scheduler.s) | the job queue and frames: what runs next, what a failure skips |
 | [`core/api.s`](core/api.s) | the calls programs make |
 | [`core/blocks.s`](core/blocks.s) | client blocks, and their copy on the card |
-| [`core/cleanup.s`](core/cleanup.s) | after every command: the guards, and MOS's message for a failure |
+| [`core/cleanup.s`](core/cleanup.s) | after every command: the guards, and reading its result |
 | [`core/repair.s`](core/repair.s) | noticing a moslet loaded over the shell, and reloading it |
 | [`core/util.s`](core/util.s), [`core/data.s`](core/data.s) | helpers; messages |
 
@@ -58,6 +58,7 @@ The shell, in the order [`hub.s`](hub.s) includes them:
 | [`shell/lines.s`](shell/lines.s) | the prompt, script lines, and `exit` |
 | [`shell/jobs.s`](shell/jobs.s) | around a user program: the screen, the capture, the pause |
 | [`shell/grow.s`](shell/grow.s) | growing a client block |
+| [`shell/results.s`](shell/results.s) | MOS's message for a failure; a nested program's result passed out |
 | [`shell/font.s`](shell/font.s) | following the prompt's font |
 | [`shell/script.s`](shell/script.s) | reading a script file |
 | [`shell/text.s`](shell/text.s), [`shell/data.s`](shell/data.s) | helpers; strings |
@@ -107,7 +108,8 @@ You type `hello` at hub's prompt:
    runs it, and returns -- into the core, which nothing loaded over.
 5. `guards` ([core/cleanup.s](core/cleanup.s)) clears a keyboard hook, closes
    files and puts the interrupt handlers back; `report` reads
-   `Try$ReturnCode` and prints MOS's message if it failed.
+   `Try$ReturnCode`, and if the command failed, the shell's `report_error`
+   ([shell/results.s](shell/results.s)) prints MOS's message.
 6. Back to step 1.
 
 ## The life of a queued job
@@ -130,7 +132,9 @@ and `hub_return_to("build -r")`, then returns:
    frame to its continuation.
 5. When the continuation is taken, `close_frame` copies the frame's result
    to `CTL_DONE`, where `hub_last_result` and `hub_failed_job` read it, and
-   the frame closes.
+   the frame closes. When the continuation has run, `cont_done`
+   ([shell/results.s](shell/results.s)) passes its result to the job that
+   opened the frame, if a job did, in the frame one out.
 6. When the queue is empty, the loop goes back to the prompt or the script.
 
 ## Words

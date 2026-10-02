@@ -21,7 +21,7 @@
 api_header:
         db      "HUB"                   ; HUB_MAGIC
         db      0                       ; HUB_MAJOR
-        db      4                       ; HUB_MINOR
+        db      5                       ; HUB_MINOR
         db      API_COUNT               ; HUB_COUNT: 9, unless a test build
                                         ; poses as an older hub
         jp      api_enter               ; HUB_ENTER

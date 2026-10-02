@@ -1,3 +1,3 @@
 ; hub's version: the one place it is written. The shell prints it, and
 ; mkrelease.sh and mklibs.sh name the release after it.
-        db      "0.4.2"
+        db      "0.5.0"
