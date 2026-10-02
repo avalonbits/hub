@@ -54,8 +54,6 @@ A second `hub` started while hub is running says so and does nothing.
   [1.6.0](https://github.com/avalonbits/aed/releases/tag/v1.6.0), CTRL+R
   builds the file you're editing with acc or zap, runs it through hub, and
   brings you back to it -- at the first error if the build failed.
-- **ade**, the Agon development environment built on aed: builds with acc
-  and zap, runs the program, and comes back to the editor with the errors.
 - **12AM Commander** (`mc`), Lennart Benschop's file manager, in a fork that
   runs programs through hub:
   [avalonbits/agon-utilities](https://github.com/avalonbits/agon-utilities/tree/hub),
