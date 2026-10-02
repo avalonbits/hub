@@ -51,7 +51,7 @@ A second `hub` started while hub is running says so and does nothing.
 ### Programs that use hub
 
 - **aed**, the text editor: since
-  [1.6.0](https://github.com/avalonbits/aed/releases/tag/v1.6.0), CTRL+R
+  [1.6.1](https://github.com/avalonbits/aed/releases/tag/v1.6.1), CTRL+R
   builds the file you're editing with acc or zap, runs it through hub, and
   brings you back to it -- at the first error if the build failed.
 - **12AM Commander** (`mc`), Lennart Benschop's file manager, in a fork
