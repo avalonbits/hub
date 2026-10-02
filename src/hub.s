@@ -9,7 +9,7 @@
 ;   hub               an interactive prompt, like MOS's own
 ;   hub -f <script>   run each line of a file, then leave (for tests)
 ;
-; After a warm reset, running hub again (autoexec.obey, or F12) resumes
+; After a warm reset, running hub again (autoexec.txt, or F12) resumes
 ; where it was: the arguments are ignored then.
 
         ASSUME  ADL=1

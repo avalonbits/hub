@@ -89,6 +89,8 @@
 ;   REPAIR  1 = reload the shell when a moslet has overwritten it. 0 likewise.
 ;   SNAPSHOT 1 = save the client blocks to the card when they change, and
 ;             restore them after a moslet. 0 likewise.
+;   CAPTURE, PROMPTFONT and API_COUNT are the shell's and the API header's:
+;             see the Makefile.
 ; ============================================================================
 
         ASSUME  ADL=1

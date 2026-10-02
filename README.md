@@ -1,97 +1,128 @@
 # hub
 
-A resident shell for the Agon (MOS 3.0.2). It runs every command itself, so
-it gets control back after each one: the basis for chaining programs ("run
-this, then bring me back"), for state that outlives a program, and for
-cleaning up after programs that leave hooks or files behind. The design is in
-the "hub: a resident shell for the Agon" document.
-
-Phase 2 adds repair and recovery to the phase 1 scheduler.
-
-- **The core** (`src/core.s`, ~1.7 KB) runs from on-chip SRAM at
-  `0xB7F300`, above 12AM Commander's launcher, where nothing MOS loads can
-  reach it. It runs each line as `Try <line>` through `OSCLI` -- MOS's own
-  prompt rules, expanded once -- and after every command clears any keyboard
-  hook, closes files left open, restores interrupt handlers, prints MOS's
-  message for a failure, and reloads the shell if a moslet loaded over it.
-- **The scheduler.** Programs queue jobs through the API while they run:
-  `hub_enter` opens a frame, `hub_push` queues commands in it, and
-  `hub_return_to` sets the continuation that brings the program back.
-  Frames nest; a failed stop-on-error job skips to its frame's continuation,
-  which can ask what happened. `hub_block` hands out named memory that
-  outlives a program, and grows a block when a program asks for more. A job pushed with `HUB_USER_PROGRAM` starts on the
-  screen hub's prompt had -- its mode, colours, font and cursor -- whatever
-  the program that queued it did to it, and leaves it so for what runs next.
-  The VDP can't be asked which font is in use, so hub follows it as aed
-  does: the last selection in `/autoexec.txt` (`fontctl n|sys` or
-  `VDU 23,0,149,0,n`), then the same at its own prompt, where a `VDU 22`
-  mode change goes back to the system font. One with `HUB_PAUSE_AFTER` ends
-  with "Press a key to return" (set `Hub$NoPause` to print it without
-  waiting, as tests do). The queue holds eight jobs waiting to run; the one
-  running doesn't take a slot.
-- **The user screen.** After a `HUB_USER_PROGRAM` job, and before its
-  pause, hub captures the screen the program left into the VDP buffer
-  `HUB_SCREEN_BUFFER` (`VDU 23,27,&21`, VDP 2.2.0 and later), so the
-  program that queued it can show it again -- Turbo Pascal's Alt-F5.
-  `hub_user_screen()` gives the mode it was captured in, or -1. VDP
-  buffers `0x4800`-`0x48FF` are hub's.
-- **Repair and recovery.** A moslet loads over the shell and, if it is big
-  enough (nano is 6.5 KB), over the client blocks. The core saves the blocks
-  to `hub.blk` next to `hub.bin` whenever they change, and after a moslet
-  reloads the shell and restores the blocks; `hub_block` repairs first too,
-  for programs that run moslets themselves. After a warm reset
-  (Ctrl-Alt-Del), running `hub` again -- from `autoexec.obey`, or with F12,
-  which hub binds -- resumes: the queue and a script's position survive in
-  on-chip SRAM and the blocks in RAM, and the job the reset cut short counts as failed,
-  so its frame's continuation runs and can ask `hub_resumed`. A second `hub`
-  started while one is running refuses.
-- **The API** is a header and jump table in the core, found through the
-  Number variable `Hub$API`. `src/hub.inc` documents every call for zap
-  programs, with `test/progs/client.s` as a worked example. C programs
-  include `<hub/hub.h>` and link `libhub.a` (`lib/hub_glue.s`, assembled
-  by zap as an ELF archive for agondev and an ACC one for acc);
-  `test/c/src/main.c` is the example.
-- **The shell** (`src/hub.s`) is a moslet at `0xB0000`: it installs the
-  core, then reads lines for it -- from MOS's line editor with `CLI$Prompt`,
-  or from a script with `hub -f <file>`. `exit` leaves hub.
-
-## Build and test
-
-    make          # build/hub.bin, assembled with a host build of zap
-    make test     # the emulator checks, the controls that show each
-                  # check fails without the feature it covers, the user
-                  # screen on the full emulator's real VDP (test/screen.sh,
-                  # with SDL's dummy video), and the library package
-                  # (test/libs.sh)
-
-`ZAP_SRC` names zap's source tree (default `~/code/zap`); `AGONDEV` the
-agondev install used for the C client and `libhub.a` (default `~/agondev`);
-`AGON_EMU` the emulator release (default `~/fab-agon-emulator-1.2.4`);
-`ACC` acc's host build (default `~/code/acc/bin/acc`), and for the tests
-`ACC_BIN`, its Agon build, and `ACC_HOME`, its checkout, whose C library
-and headers go on the test card.
+hub is a resident shell for the Agon Light and Console8, running MOS 3.0.2.
+You use it like MOS's own prompt, but hub stays in memory under every program
+you run. That lets programs ask it to run other programs and bring them back
+afterwards -- an IDE that runs the compiler and then returns to the editor, a
+file manager that opens an editor and comes back -- and it cleans up after
+every program, whether that program used hub or not.
 
 ## Install
 
-Unzip `hub-<version>.zip` at the root of the SD card:
+Download `hub-<version>.zip` from the
+[releases](https://github.com/avalonbits/hub/releases) and unzip it at the
+root of the SD card:
 
     /mos/hub.bin                  hub itself
-    /lib/acc/libhub.a             the client library, for acc on the Agon
+    /lib/acc/libhub.a             the client library, for programs built with acc
     /lib/acc/include/hub/hub.h    its header
 
-Type `hub`, or put `hub` at the end of `autoexec.obey` -- which is also what
-lets hub resume after a reset. `exit` leaves it; F12 brings it back.
+hub needs MOS 3.0.2. Showing a program's screen again after it ends (see
+`hub_user_screen` below) needs VDP 2.2.0 or later; everything else works on
+any VDP MOS 3.0.2 runs with.
+
+## Using hub
+
+Type `hub` at the MOS prompt. hub prints its version and gives you a prompt
+that behaves like MOS's: the same `CLI$Prompt`, line editing and tab
+completion, and every line runs as it would at MOS's prompt -- built-in
+commands, moslets from `/mos`, programs from `/bin`, `.bin` files by path.
+
+To start hub every time the machine boots, make `hub` the last line of
+`/autoexec.txt`.
+
+    exit            leave hub, back to MOS's prompt
+    F12             start hub again from MOS's prompt (hub binds it, unless
+                    you have bound F12 yourself)
+    hub -f <file>   run the lines of a file, then leave hub; blank lines and
+                    lines starting with # are skipped
+
+What hub does for you, after every command:
+
+- **Cleans up.** A program that leaves a keyboard hook, files open or its own
+  interrupt handlers behind would otherwise crash the machine later. hub
+  clears the hook, closes the files and puts the handlers back.
+- **Reports failures** with MOS's own message, as MOS's prompt does.
+- **Survives moslets.** A moslet loads where hub's prompt lives; hub notices
+  and reloads it.
+- **Survives a reset.** After Ctrl-Alt-Del, starting hub again -- from
+  `autoexec.txt` or with F12 -- picks up the work programs had queued. The
+  program the reset interrupted counts as failed, and the program that
+  queued it is told so.
+
+A second `hub` started while hub is running says so and does nothing.
+
+### Programs that use hub
+
+- **ade**, the Agon development environment built on aed: builds with acc
+  and zap, runs the program, and comes back to the editor with the errors.
+- **12AM Commander** (`mc`), Lennart Benschop's file manager, in a fork that
+  runs programs through hub:
+  [avalonbits/agon-utilities](https://github.com/avalonbits/agon-utilities/tree/hub),
+  branch `hub`.
 
 ## Writing programs for hub
 
-A C program includes `<hub/hub.h>` and links `libhub.a`. On the Agon, with
-acc installed from its own release, that is all it takes -- acc searches
-`/lib/acc/include` for every `#include`:
+A program asks hub for work while it runs; nothing happens until it returns.
+A program that wants to run a command and then come back:
+
+```c
+#include <hub/hub.h>
+
+int main(void)
+{
+    if (hub_present()) {
+        struct state *s = hub_block("MYPG", sizeof *s);    /* survives the run */
+
+        save_state(s);
+        hub_enter("MYPG");                                 /* open a frame */
+        hub_push("acc hello.c", HUB_STOP_ON_ERROR);        /* the command */
+        hub_return_to("myprog -resume");                   /* then back here */
+
+        return 0;                                          /* hub takes over */
+    }
+    /* ... and keep working without hub, where hub_present() is false */
+}
+```
+
+When `myprog -resume` runs, `hub_last_result()` and `hub_failed_job()` say
+how the commands went. The calls, in [`include/hub/hub.h`](include/hub/hub.h):
+
+| Call | Does |
+|---|---|
+| `hub_present()` | true if hub is running; call it first |
+| `hub_enter(tag)` | open a frame, named by a 4-character tag |
+| `hub_push(cmd, flags)` | queue a command in it, as typed at the prompt |
+| `hub_return_to(cmd)` | the frame's continuation: runs last, even after a failure |
+| `hub_last_result()` | in the continuation: the result of the frame's last command |
+| `hub_failed_job()` | in the continuation: which command stopped the frame, or -1 |
+| `hub_block(tag, size)` | named memory that keeps its contents between runs |
+| `hub_depth()` | how many frames are open |
+| `hub_resumed()` | in the continuation: 1 if a reset cut the frame short |
+| `hub_user_screen()` | the mode of the last user program's captured screen, or -1 |
+
+Flags for `hub_push`:
+
+| Flag | Does |
+|---|---|
+| `HUB_STOP_ON_ERROR` | a non-zero result skips the rest of the frame, up to its continuation |
+| `HUB_USER_PROGRAM` | run it on the screen hub's prompt has -- mode, font, colours, cursor -- and put that back afterwards; capture what it leaves for `hub_user_screen` |
+| `HUB_PAUSE_AFTER` | afterwards, "Press a key to return" |
+
+A queue holds eight commands waiting to run, continuations included; a
+command is at most 93 characters. Programs written with zap use
+[`src/hub.inc`](src/hub.inc), which documents the same calls in assembly;
+[`test/progs/client.s`](test/progs/client.s) uses all of them.
+
+### Linking
+
+On the Agon, with acc installed from its own release and hub's zip unzipped
+over it, a program builds with nothing more than
 
     acc main.c /lib/acc/libhub.a
 
-On a PC or Mac, `hub-libs-<version>.tar.gz` has the library for both
-compilers:
+On a PC or Mac, `hub-libs-<version>.tar.gz`, also in the releases, has the
+library for both compilers:
 
     include/hub/hub.h         the C API
     include/hub/hub.inc       the same for zap programs
@@ -99,7 +130,7 @@ compilers:
     lib/acc/libhub.a          for acc
     VERSION                   hub's version and the commit it was built from
 
-With agondev, the three lines go after the `include` of agondev's makefile,
+With agondev, add three lines after the `include` of agondev's makefile,
 which sets `CFLAGS` and `PROJECTLIBDIR` itself:
 
     include $(shell agondev-config --makefile)
@@ -108,25 +139,37 @@ which sets `CFLAGS` and `PROJECTLIBDIR` itself:
     PROJECTLIBDIR := <dir>/lib/agondev
     LIBS := -lhub
 
-With acc: `acc main.c -I<dir>/include <dir>/lib/acc/libhub.a`.
+With acc on a PC or Mac: `acc main.c -I<dir>/include <dir>/lib/acc/libhub.a`.
 
-A program must work without hub too: `hub_present()` is false then, and
-every other call fails harmlessly.
+## How it works
+
+[`docs/DESIGN.md`](docs/DESIGN.md) explains hub's parts, where each lives in
+memory, how it runs a command and a queue of them, and why.
+
+## Building and testing
+
+hub is assembled with [zap](https://github.com/avalonbits/zap), built for the
+host from its source. The tests run on
+[fab-agon-emulator](https://github.com/tomm/fab-agon-emulator).
+
+    make            # build/hub.bin and the test programs
+    make test       # everything below
+
+| Test | Checks |
+|---|---|
+| [`test/run.sh`](test/run.sh) | hub in the CLI emulator, through scripts on the card; and, for each safeguard, a build without it that shows the check fails |
+| [`test/screen.sh`](test/screen.sh) | the screen and font a user program gets, and its captured screen, on the full emulator's real VDP (SDL's dummy video driver) |
+| [`test/libs.sh`](test/libs.sh) | the library package, built against by agondev and acc |
+
+The tools are found through `ZAP_SRC` (zap's source, default `~/code/zap`),
+`AGONDEV` (default `~/agondev`), `AGON_EMU` (the emulator release, default
+`~/fab-agon-emulator-1.2.4`), `ACC` (acc's host build, default
+`~/code/acc/bin/acc`), and for the tests `ACC_BIN` (acc built for the Agon)
+and `ACC_HOME` (acc's checkout, whose C library and headers go on the test
+card).
 
 ## Releasing
 
     ./mkrelease.sh    # hub-<version>.zip and hub-libs-<version>.tar.gz
 
-The version is written once, in `src/version.inc`; hub prints it when it
-starts.
-
-## MOS 3.0.2 bugs worked around
-
-- `mos_setvarval` (API `0x30`) overwrites the variable that sorts just before
-  a new name instead of creating it. hub creates `Hub$API` with `SetEval`.
-- `mos_readvarval` (API `0x31`) answers for that same neighbour when the
-  variable asked for doesn't exist, with status 0. hub, `hub.inc`'s example
-  and `hub.h` check the name it returns in IY.
-
-Both come from `getSystemVariable` returning a positive number for "not
-found" while its callers only test for -1 (`mos_sysvars.c`).
+The version is written once, in [`src/version.inc`](src/version.inc).
