@@ -3,7 +3,7 @@
 ;
 ; Part of the shell; hub.s includes it, in order.
 
-; start: HL = the arguments MOS passes, without the program name.
+; start: where MOS enters hub. HL = the arguments, without the program name.
 ;
 ; Three cases:
 ;
@@ -16,52 +16,100 @@
 ;     forgot its variables. Resume: keep the queue, the script position and
 ;     the blocks, and settle the job the reset cut short.
 ;   - Otherwise start afresh.
+;
+; Then the core runs everything until the shell says stop (exit, or the end
+; of a script), and hub leaves.
 start:
         push    ix
         push    iy
-        push    hl
+        push    hl                      ; the arguments, for greet
 
-        ld      hl, v_api
-        call    var_exists
-        jr      nz, @not_running
-        ld      hl, msg_running
-        call    print
+        call    already_running
+        jr      nz, @first
         pop     hl
         jp      leave
 
-@not_running:
+@first:
+        call    install_core
+        call    was_running             ; A = 1 to resume, 0 to start afresh
+        ld      (RESUMING), a
+        or      a, a
+        call    z, fresh_control_block
+        call    note_shell
+
+        ld      a, (RESUMING)
+        call    CORE_INIT
+        xor     a, a
+        ld      (CTL_CAPMODE), a        ; a reset may have cleared the VDP's
+        call    publish_api             ; buffers; there is no capture now
+        call    bind_f12
+
+        pop     hl
+        call    greet
+
+        call    CORE_MAIN               ; until exit or the script's end
+
+        call    withdraw_api
+        xor     a, a
+        ld      (CTL_MAGIC), a          ; a later hub starts afresh
+
+; leave: back to MOS, with result 0 -- the end of start, and where a second
+; copy of hub goes straight away. Expects IX and IY pushed, as start does.
+leave:
+        pop     iy
+        pop     ix
+        ld      hl, 0
+
+        ret
+
+; already_running: Z, having said so, if hub is running already.
+; Clobbers everything a MOS call may.
+already_running:
+        ld      hl, v_api
+        call    var_exists
+        ret     nz
+        ld      hl, msg_running
+        call    print
+        xor     a, a                    ; Z: print leaves the flags undefined
+
+        ret
+
+; install_core: copy the core, carried at the end of this file, to on-chip
+; RAM. Clobbers BC, DE, HL.
+install_core:
         ld      hl, core_image
         ld      de, CORE_BASE
         ld      bc, core_image_end - core_image
         ldir
 
+        ret
+
+; was_running: A = 1 if the control block still holds hub's magic -- hub was
+; running when the machine was reset -- else 0. Clobbers B, DE, HL.
+was_running:
         ld      hl, magic
         ld      de, CTL_MAGIC
         ld      b, 4
-        xor     a, a
 
-@magic:
-        ld      c, a
+@compare:
         ld      a, (de)
         cp      a, (hl)
-        ld      a, c
-        jr      z, @same
-        inc     a                       ; A counts mismatches
-
-@same:
+        jr      nz, @no
         inc     de
         inc     hl
-        djnz    @magic
-        or      a, a
+        djnz    @compare
         ld      a, 1
-        jr      z, @decided             ; all four matched: resume
+
+        ret
+
+@no:
         xor     a, a
 
-@decided:
-        ld      (RESUMING), a
-        or      a, a
-        jr      nz, @kept
+        ret
 
+; fresh_control_block: a zeroed control block with hub's magic in it, and
+; the font the machine booted into. Clobbers everything a MOS call may.
+fresh_control_block:
         ld      hl, CTL_BASE
         ld      de, CTL_BASE + 1
         ld      bc, CTL_END - CTL_BASE - 1
@@ -72,65 +120,50 @@ start:
         ld      de, CTL_MAGIC
         ld      bc, 4
         ldir
-        call    boot_font
 
-@kept:
+        jp      boot_font
+
+; note_shell: what the core needs to repair the shell and keep the blocks:
+; the checksum of the shell's code, the path hub.bin was run from (MOS's
+; LastBin$Run), and from it the path of hub.blk. Clobbers everything a MOS
+; call may.
+note_shell:
         ld      hl, shell_code_end - SHELL_BASE
         ld      (CTL_SUMLEN), hl
         call    CORE_SUM
         ld      (CTL_SUM), hl
 
-; Where hub was run from, so the core can reload the shell and save the
-; blocks next to it. The length leaves room for the terminator.
-        ld      hl, CTL_SELF
+        ld      hl, CTL_SELF            ; zeroed, so the path ends within it
         ld      de, CTL_SELF + 1
         ld      bc, 63
         ld      (hl), 0
         ldir
         ld      hl, v_lastbin
         ld      ix, CTL_SELF
-        ld      de, 63
+        ld      de, 63                  ; leaves room for the terminator
         ld      iy, 0
         ld      c, 0
         ld      a, mos_readvarval
         rst.lil $08
-        call    set_blkpath
 
-        ld      a, (RESUMING)
-        call    CORE_INIT
-        xor     a, a
-        ld      (CTL_CAPMODE), a        ; a reset may have cleared the VDP's
-        call    publish_api             ; buffers; there is no capture now
-        call    bind_f12
+        jp      set_blkpath
 
-        pop     hl
+; greet: the banner, or the resume message. Starting afresh, the arguments
+; are read first: after a reset they were the ones from before it, and the
+; script position kept in the control block goes with them.
+;
+; In:   HL = the arguments. Clobbers everything a MOS call may.
+greet:
         ld      a, (RESUMING)
         or      a, a
         jr      nz, @resumed
         call    parse_args
         ld      hl, msg_banner
-        jr      @greet
+        jp      print
 
 @resumed:
         ld      hl, msg_resumed
-
-@greet:
-        call    print
-
-        call    CORE_MAIN
-
-        call    withdraw_api
-        xor     a, a
-        ld      (CTL_MAGIC), a
-
-; leave: back to MOS, with result 0 -- the end of start, and where a second
-; copy of hub goes straight away. Expects IX and IY pushed, as start does.
-leave:
-        pop     iy
-        pop     ix
-        ld      hl, 0
-
-        ret
+        jp      print
 
 ; var_exists: Z if the variable named at HL exists.
 ;
