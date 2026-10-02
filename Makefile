@@ -35,7 +35,7 @@ ACC     ?= $(HOME)/code/acc/bin/acc     # acc's host build: libc, rt and headers
 
 .PHONY: all test clean FORCE
 
-EXAMPLES := $(addprefix examples/bin/,seq.bin rep.bin see.bin hubinfo.bin)
+EXAMPLES := $(addprefix examples/bin/,seq.bin rep.bin see.bin hubinfo.bin retry.bin onfail.bin)
 
 all: $(B)/hub.bin $(B)/lib/agondev/libhub.a $(B)/lib/acc/libhub.a $(PROGS) $(EXAMPLES)
 
@@ -128,6 +128,19 @@ examples/bin/%.bin: examples/src/%.c include/hub/hub.h build/lib/agondev/libhub.
 		-f $(AGONDEV)/config/makefile.inc NAME=$* LIBS=-lhub
 	cp build/ex/$*/bin/$*.bin $@
 
+# An assembly example that calls the library (retry, onfail): zap makes an
+# ELF object, which agondev links ahead of its start-up code by naming it in
+# LIBS, so its _main is there to be called. src/ stays empty.
+examples/bin/%.bin: examples/src/%.s build/lib/agondev/libhub.a $(ZAP)
+	@mkdir -p build/ex/$*/src build/ex/$*/lib
+	cp $< build/lib/agondev/libhub.a build/ex/$*/
+	mv build/ex/$*/libhub.a build/ex/$*/lib/
+	cd build/ex/$* && $(ZAP) $*.s $*.o -f elf > $*.log || { cat $*.log; exit 1; }
+	PATH=$(AGONDEV)/bin:$$PATH $(MAKE) -s -C build/ex/$* \
+		-f $(AGONDEV)/config/makefile.inc NAME=$* "LIBS=$*.o -lhub"
+	cp build/ex/$*/bin/$*.bin $@
+
+# hubinfo calls hub through hub.inc, without the library: a plain program.
 examples/bin/hubinfo.bin: examples/src/hubinfo.s src/hub.inc $(ZAP)
 	@mkdir -p build/ex/hubinfo
 	cp examples/src/hubinfo.s src/hub.inc build/ex/hubinfo/

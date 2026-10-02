@@ -222,7 +222,9 @@ The [examples](../examples) each show one, and are useful as they are:
 | [`seq`](../examples/src/seq.c) | run commands one after another, stopping at the first that fails, then say which |
 | [`rep`](../examples/src/rep.c) | a program that chains to itself, keeping a count in a block |
 | [`see`](../examples/src/see.c) | run the user's program on the prompt's screen, pause, and show its screen again |
-| [`hubinfo`](../examples/src/hubinfo.s) | find hub and call it from assembly |
+| [`retry`](../examples/src/retry.s) | in assembly, through the library: run a command until it works, chaining to itself |
+| [`onfail`](../examples/src/onfail.s) | in assembly, through the library: run a command, and another if it fails |
+| [`hubinfo`](../examples/src/hubinfo.s) | in assembly, without the library: find hub and call it through `hub.inc` |
 
 **Run commands and come back.** Open a frame, push the commands with
 `HUB_STOP_ON_ERROR` if a failure should stop the rest, set the continuation
@@ -241,6 +243,12 @@ as its continuation starts, so this never nests deeper.
 all of it -- its jobs and its continuation -- runs before your next job. An
 IDE can run a debugger, which runs the program and comes back to itself,
 before the IDE's continuation runs.
+
+The job's result, as your frame sees it, is what that program returned the
+first time, when it queued its work -- usually 0. What its continuation
+returns at the end stays in its own frame. So `seq retry 3 make ; run`
+carries on to `run` even when `retry` gives up, and a job that should stop
+your frame on failure must fail in its first run.
 
 **Run the user's program.** Push it with `HUB_USER_PROGRAM`, and
 `HUB_PAUSE_AFTER` if its output should stay on screen until a key. Don't
@@ -280,8 +288,33 @@ the [hub branch of agon-utilities](https://github.com/avalonbits/agon-utilities/
 
 ## From assembly
 
-[`src/hub.inc`](../src/hub.inc) has the offsets and documents every call
-for zap programs. hub publishes the Number variable `Hub$API`, holding the
+An assembly program can use hub two ways.
+
+**Through the library**, as C does -- [`retry`](../examples/src/retry.s)
+and [`onfail`](../examples/src/onfail.s) do this. The program is `_main`,
+called by the C start-up code with `argc` at `(sp+3)` and `argv` at
+`(sp+6)`. It `XREF`s the library's functions, pushes their arguments right
+to left, three bytes each, calls them and pops the arguments afterwards; the
+result comes back in A for `hub_present` and HL for the rest. The library
+keeps IX and SP and may change any other register, IY included. To build:
+
+- for acc, on the Agon or a PC:
+
+      zap retry.s retry.o -f acc
+      acc retry.o /lib/acc/libhub.a -o retry.bin
+
+- for agondev: `zap retry.s retry.o -f elf`, then a project with an empty
+  `src/` and a Makefile that names the object ahead of the library, so it is
+  linked whole and its `_main` is there for agondev's start-up code:
+
+      NAME=retry
+      include $(shell agondev-config --makefile)
+      LIBS := retry.o -lhub
+
+**Directly**, without the library, as
+[`hubinfo`](../examples/src/hubinfo.s) does: a plain program that finds hub
+and calls its entries itself. [`src/hub.inc`](../src/hub.inc) has the
+offsets and documents every call. hub publishes the Number variable `Hub$API`, holding the
 address of its API header:
 
     +0  "HUB"        HUB_MAGIC

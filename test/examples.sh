@@ -8,6 +8,11 @@ ROOT=$(cd "$(dirname "$0")/.." && pwd)
 EMU=${AGON_EMU:-$HOME/fab-agon-emulator-1.2.4}
 MOS=$EMU/firmware/mos_platform.bin     # MOS 3.0.2
 ACC=${ACC:-$HOME/code/acc/bin/acc}
+# zap and acc built for the Agon, and acc's library and headers, for building
+# an example on the Agon itself.
+ZAP_BIN=${ZAP_BIN:-$HOME/code/zap/bin/zap.bin}
+ACC_BIN=${ACC_BIN:-$HOME/code/acc/bin/acc.bin}
+ACC_HOME=${ACC_HOME:-$HOME/code/acc}
 
 status=0
 pass() { echo "PASS  $1"; }
@@ -15,7 +20,8 @@ fail() { echo "FAIL  $1"; status=1; }
 has() { grep -qF -- "$2" <<< "$1"; }
 
 # boot <seconds> <autoexec>: a card with hub, the examples and hub's test
-# programs hello and fail; print the console.
+# programs hello and fail; print the console. $EXTRA, if set, is a directory
+# whose contents go on the card too, over the examples.
 boot() {
     local sd fifo hold
     sd=$(mktemp -d)
@@ -24,6 +30,7 @@ boot() {
     mkdir -p "$sd/bin"
     cp "$ROOT/build/hub.bin" "$sd/mos/"
     cp "$ROOT"/examples/bin/*.bin "$ROOT/build/test/hello.bin" "$ROOT/build/test/fail.bin" "$sd/bin/"
+    [ -n "${EXTRA:-}" ] && cp -r "$EXTRA"/. "$sd/"
     cat > "$sd/script.txt"
     printf "$2" > "$sd/autoexec.txt"
 
@@ -48,6 +55,10 @@ seq hello ; fail ; hello
 rep 3 hello
 rep 2 fail
 seq rep 2 hello ; hubinfo
+retry 3 hello
+retry 2 fail
+onfail fail ; hello
+onfail hello ; fail
 SCRIPT
 )
 
@@ -93,6 +104,36 @@ else
     fail "seq and rep nest: rep's frames run inside seq's"
 fi
 
+# The assembly examples that call the library, as agondev built them.
+asm_checks() {
+    local by=$1 sect
+    sect=$(sed -n '/^hub> retry 3 hello$/,/^hub> /p' <<< "$out")
+    if [ "$(grep -c 'hello from a child' <<< "$sect")" = 1 ] \
+       && has "$sect" "retry: worked after 1 tries"; then
+        pass "retry ($by) stops once the command works"
+    else
+        fail "retry ($by) stops once the command works"
+    fi
+    sect=$(sed -n '/^hub> retry 2 fail$/,/^hub> /p' <<< "$out")
+    if [ "$(grep -c 'failing on purpose' <<< "$sect")" = 2 ] \
+       && has "$sect" "retry: failed 2 times, last with 19"; then
+        pass "retry ($by) tries as often as asked, then gives up"
+    else
+        fail "retry ($by) tries as often as asked, then gives up"
+    fi
+    sect=$(sed -n '/^hub> onfail fail ; hello$/,/^hub> /p' <<< "$out")
+    has "$sect" "hello from a child" \
+        && pass "onfail ($by) runs the second command when the first fails" \
+        || fail "onfail ($by) runs the second command when the first fails"
+    sect=$(sed -n '/^hub> onfail hello ; fail$/,/^hub> /p' <<< "$out")
+    if has "$sect" "hello from a child" && ! has "$sect" "failing on purpose"; then
+        pass "onfail ($by) leaves the second alone when the first works"
+    else
+        fail "onfail ($by) leaves the second alone when the first works"
+    fi
+}
+asm_checks agondev
+
 # After the script, hub has gone. seq fails with 100, which MOS passes back
 # as it is -- not 1, which MOS turns into its own "Invalid command".
 if has "$out" "hub is not running" && has "$out" "seq: needs hub" \
@@ -114,6 +155,59 @@ if has "$out" "Press a key to return" && has "$out" "see: the program returned 1
     pass "see runs a user program, pauses, and offers its captured screen"
 else
     fail "see runs a user program, pauses, and offers its captured screen"
+fi
+
+# The assembly examples built for acc on a PC, as retry.s says -- zap's
+# ACC object, linked by acc -- run the same way.
+if [ -x "$ACC" ]; then
+    EXTRA=$(mktemp -d)
+    mkdir -p "$EXTRA/bin"
+    for ex in retry onfail; do
+        (cd "$EXTRA" && "$ROOT/build/zap" "$ROOT/examples/src/$ex.s" "$ex.o" -f acc >/dev/null \
+            && "$ACC" "$ex.o" "$ROOT/build/lib/acc/libhub.a" -o "bin/$ex.bin" >/dev/null 2>&1)
+        rm -f "$EXTRA/$ex.o"
+    done
+    out=$(boot 120 'hub -f /script.txt\r\nemulator_exit_success\r\n' <<'SCRIPT'
+retry 3 hello
+retry 2 fail
+onfail fail ; hello
+onfail hello ; fail
+SCRIPT
+)
+    asm_checks acc
+    rm -rf "$EXTRA"
+    unset EXTRA
+fi
+
+# And on the Agon itself: zap and acc on the card assemble retry and link it
+# with the library from hub's acc zip, laid over acc's own /lib/acc, and the
+# result runs under hub.
+if [ -f "$ZAP_BIN" ] && [ -f "$ACC_BIN" ]; then
+    EXTRA=$(mktemp -d)
+    mkdir -p "$EXTRA/bin" "$EXTRA/lib/acc"
+    cp "$ZAP_BIN" "$EXTRA/bin/zap.bin"
+    cp "$ACC_BIN" "$EXTRA/bin/acc.bin"
+    cp "$ACC_HOME/bin/libc.a" "$ACC_HOME/bin/rt.a" "$EXTRA/lib/acc/"
+    cp -r "$ACC_HOME/include" "$EXTRA/lib/acc/include"
+    rel=$(mktemp -d)
+    "$ROOT/mkrelease.sh" "$rel" > /dev/null
+    unzip -q -o "$rel"/hub-acc-*.zip -d "$EXTRA"
+    rm -rf "$rel"
+    cp "$ROOT/examples/src/retry.s" "$EXTRA/"
+    out=$(boot 240 'hub -f /script.txt\r\nemulator_exit_success\r\n' <<'SCRIPT'
+Delete /bin/retry.bin
+zap /retry.s /retry.o -f acc
+acc /retry.o /lib/acc/libhub.a -o /bin/retry.bin
+retry 2 fail
+SCRIPT
+)
+    has "$out" "retry: failed 2 times, last with 19" \
+        && pass "retry, assembled and linked on the Agon, runs under hub" \
+        || fail "retry, assembled and linked on the Agon, runs under hub"
+    rm -rf "$EXTRA"
+    unset EXTRA
+else
+    echo "SKIP  on the Agon: no Agon build of zap or acc"
 fi
 
 # acc builds the C examples too, from the same source.

@@ -102,7 +102,9 @@ those to `/bin` on the card:
 | `seq <cmd> ; <cmd> ...` | runs commands one after another, stopping at the first that fails, and says which |
 | `rep <n> <cmd>` | runs a command n times and counts the failures |
 | `see <cmd>` | runs a program, pauses, and lets you see its screen again |
-| `hubinfo` | says whether hub is running, its API version and how many frames are open (assembly) |
+| `retry <n> <cmd>` | runs a command until it works, at most n times (assembly, through the library) |
+| `onfail <cmd> ; <cmd>` | runs a command, and the second if it fails (assembly, through the library) |
+| `hubinfo` | says whether hub is running, its API version and how many frames are open (assembly, calling hub directly) |
 
 ## How it works
 
