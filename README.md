@@ -135,3 +135,7 @@ card).
                       # and hub-agondev-<version>.zip
 
 The version is written once, in [`src/version.inc`](src/version.inc).
+
+## License
+
+hub is free software under the MIT License; see [LICENSE](LICENSE).
