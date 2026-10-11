@@ -4,7 +4,9 @@
 ; Part of the shell; hub.s includes it, in order.
 
 ; job_start: A = the flags of the job about to run; the core calls this only
-; when one of HUB_USER_PROGRAM and HUB_PAUSE_AFTER is set.
+; when one of HUB_USER_PROGRAM, HUB_PAUSE_AFTER and HUB_SHELL is set.
+; Out: carry set for a HUB_SHELL job, which runs nothing (shell_enter);
+; carry clear for the core to run the job.
 ;
 ; HUB_USER_PROGRAM: hand the screen over as hub's prompt had it, whatever
 ; the program that queued the job did to it -- an IDE's colours, layout,
@@ -14,8 +16,15 @@
 ; also resets the viewports, colours and palette and clears the screen; and
 ; VDU 23,1,1 shows the cursor.
 job_start:
+        ld      (JOB_FLAGS_V), a
         bit     FLAG_USER_BIT, a
-        ret     z
+        call    nz, reset_screen
+        ld      a, (JOB_FLAGS_V)
+        bit     FLAG_SHELL_BIT, a
+        jp      nz, shell_enter         ; a shell: carry set, nothing to run
+        or      a, a                    ; carry clear: the core runs the job
+
+        ret
 
 ; reset_screen: the screen as hub's prompt has it. The font comes after the
 ; mode, since a mode change goes back to the system font.

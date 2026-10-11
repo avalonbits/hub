@@ -59,6 +59,7 @@ The shell, in the order [`hub.s`](hub.s) includes them:
 | [`shell/jobs.s`](shell/jobs.s) | around a user program: the screen, the capture, the pause |
 | [`shell/grow.s`](shell/grow.s) | growing a client block |
 | [`shell/results.s`](shell/results.s) | MOS's message for a failure; a nested program's result passed out |
+| [`shell/shells.s`](shell/shells.s) | nested shells: `HUB_SHELL` jobs, and `exit` closing them |
 | [`shell/font.s`](shell/font.s) | following the prompt's font |
 | [`shell/script.s`](shell/script.s) | reading a script file |
 | [`shell/text.s`](shell/text.s), [`shell/data.s`](shell/data.s) | helpers; strings |

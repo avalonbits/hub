@@ -51,3 +51,8 @@ vdu_capture:    db      23, 0, $a0              ; clear the buffer
                 dw      HUB_SCREEN_BUFFER
                 dw      0
 vdu_capture_end:
+msg_shell_in:   db      "hub: exit goes back to ", 0
+msg_shell_out:  db      "hub: back to ", 0
+msg_too_deep:   db      "hub: shells nested too deep", 13, 10, 0
+s_hub:          db      "hub", 0
+space:          db      " ", 0

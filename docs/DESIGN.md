@@ -71,7 +71,7 @@ All addresses are in [`src/layout.inc`](../src/layout.inc).
 | Address | What |
 |---|---|
 | `0xB0000` | the shell's code |
-| `0xB1000` | client blocks: a header, a directory of 16 entries, then the blocks (about 24 KB) |
+| `0xB1800` | client blocks: a header, a directory of 16 entries, then the blocks (about 22 KB) |
 | `0xB7000` | the shell's scratch: its line buffer and the like |
 | `0xB7E000`-`0xB7F2FF` | 12AM Commander's launcher; not hub's |
 | `0xB7F300` | the core |
@@ -154,6 +154,19 @@ round, the shell's `cont_done` makes its result the opener's result in the
 frame one out, and if the opener was pushed with `HUB_STOP_ON_ERROR` and the
 result isn't 0, skips that frame to its continuation, as if the job had
 failed directly.
+
+**Nested shells.** A job pushed with `HUB_SHELL` runs no command: the shell
+(`shell_enter`, in `shell/shells.s`) holds every job then waiting -- the
+continuation of its frame, and whatever the frames below queued -- and the
+core goes back to reading lines. `next_job` runs only the jobs in front of
+the held ones, so everything done at that prompt, hub clients and their
+frames included, finishes first, and `skip_frame` stops short of them, so a
+failure there can't skip them. The frames open below the shell are out of
+reach meanwhile: `hub_push` treats their depth, `CTL_FLOOR`, as no frame, so a
+program that pushes without its own `hub_enter` can't add to them. `exit`
+closes the shell and lets the held jobs go, in order. Shells nest, five
+deep: a small stack in the control block keeps each one's held count and
+floor. It all lives in the control block, so a reset in a shell keeps it.
 
 **The running job.** A job leaves the queue as it starts: its header goes to
 the control block and its command to the command buffer. All eight slots are
@@ -243,7 +256,7 @@ in the core:
 
     +0  "HUB"         magic
     +3  0             major version
-    +4  5             minor version
+    +4  6             minor version
     +5  9             number of entries
     +6  JP hub_enter  one 4-byte jump per call, in a fixed order
 
@@ -305,5 +318,5 @@ firmware, with SDL's dummy video driver ([`test/screen.sh`](../test/screen.sh)).
 | jobs waiting | 8, continuations included |
 | frames open | 6 |
 | a command | 93 characters |
-| blocks | 16, in about 24 KB |
+| blocks | 16, in about 22 KB |
 | the core | 1,792 bytes |

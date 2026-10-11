@@ -32,8 +32,9 @@ core_main:
         call    next_job                ; carry set: a job ran
         jr      c, @loop
 
-        call    SHELL_READLINE          ; HL = next line, or 0 to stop
-        call    hl_is_zero
+        call    SHELL_READLINE          ; HL = next line, or 0 to stop;
+        jr      c, @loop                ; carry: nothing to run (an exit
+        call    hl_is_zero              ; that let held jobs go)
         jr      z, @done
 
         call    build_cmd               ; CTL_CMD = "Try " + line
@@ -114,8 +115,7 @@ build_cmd:
         inc     de
         djnz    @copy
 
-        ld      hl, msg_long
-        call    print
-        scf
+        scf                             ; can't happen: the prompt's line
 
-        ret
+        ret                             ; editor and read_line stop short
+                                        ; of CMD_MAX, and jobs at 93

@@ -152,7 +152,7 @@ state:
         call    _hub_block              ; void *, in HL; NULL if no room
         pop     de
         pop     de
-        ld      a, h                    ; NULL? (blocks are in 0xB1000-
+        ld      a, h                    ; NULL? (blocks are in 0xB1800-
         or      a, l                    ; 0xB6FFF, so H or L is set)
         scf
         ret     z

@@ -100,6 +100,10 @@ HUB_PAUSE_AFTER:        equ     $04     ; afterwards, worked or not, "Press a
                                         ; key to return" and wait for one --
                                         ; unless the variable Hub$NoPause is
                                         ; set, as for tests. (Since 0.3.)
+HUB_SHELL:              equ     $08     ; the job is hub's prompt, not a
+                                        ; command: the user works there, and
+                                        ; `exit` ends the job; the jobs after
+                                        ; it wait until then. (Since 0.6.)
 HUB_CONTINUATION:       equ     $80     ; set by hub_return_to; not for hub_push
 
 HUB_CMD_MAX:    equ     93              ; longest command a job can hold

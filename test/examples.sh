@@ -67,7 +67,7 @@ seq client n ; hello
 SCRIPT
 )
 
-has "$out" "hub API 0.5, 9 calls, 0 frames open" \
+has "$out" "hub API 0.6, 9 calls, 0 frames open" \
     && pass "hubinfo finds hub from assembly and calls it" \
     || fail "hubinfo finds hub from assembly and calls it"
 

@@ -54,13 +54,16 @@ next_job:
         ld      a, (CTL_NEXT)
         call    drop_jobs               ; the jobs a failure skipped
         ld      a, (CTL_NJOBS)
-        or      a, a
-        jr      nz, @take
-
+        ld      hl, CTL_HELD
+        sub     a, (hl)                 ; the jobs that may run: those a
+        jr      nz, @take               ; nested shell holds wait
+        or      a, (hl)
+        ret     nz                      ; only held jobs: to the prompt,
+                                        ; carry clear from the or
         ld      (CTL_INSERT), a         ; drained: start again from empty
         ld      (CTL_DEPTH), a
 
-        ret                             ; carry clear from the or
+        ret
 
 ; The job leaves the queue as it starts: its header goes to CTL_RUNNING and
 ; its command to CTL_CMD, so its slot is free for the jobs it pushes. A
@@ -93,8 +96,9 @@ next_job:
 ; may have been a moslet, so it is checked again first.
 @run:
         ld      a, (ix+JOB_FLAGS)
-        and     a, HUB_USER_PROGRAM | HUB_PAUSE_AFTER
-        call    nz, SHELL_JOB_START
+        and     a, HUB_USER_PROGRAM | HUB_PAUSE_AFTER | HUB_SHELL
+        call    nz, SHELL_JOB_START     ; carry set: a shell, nothing to run
+        jr      c, @ran
         call    run_cmd
         ld      a, (CTL_RUNNING+JOB_FLAGS)
         and     a, HUB_USER_PROGRAM | HUB_PAUSE_AFTER
@@ -230,6 +234,8 @@ skip_frame:
 
 @next:
         ld      a, (CTL_NJOBS)
+        ld      hl, CTL_HELD
+        sub     a, (hl)                 ; never into jobs a nested shell holds
         ld      b, a
         ld      a, (CTL_NEXT)
         cp      a, b

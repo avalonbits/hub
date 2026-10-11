@@ -10,7 +10,9 @@ CTL_BASE:       equ     $b7fa00         ; control block; the core's code ends be
 SRAM_END:       equ     $b80000
 
 SHELL_BASE:     equ     $b0000          ; moslet load address
-BLOCKS:         equ     $b1000          ; client blocks: header, directory, data
+BLOCKS:         equ     $b1800          ; client blocks: header, directory, data;
+                                        ; below them, 6 KB for the shell
+                                        ; (SHELL_MAX in the Makefile)
 SHELL_VARS:     equ     $b7000          ; shell scratch, outside the checksummed code
 SHELL_END:      equ     $b8000          ; MOS reserves 0xB8000 up
 
@@ -101,6 +103,7 @@ NO_JOB:         equ     $FF
 FLAG_STOP_BIT:  equ     0               ; HUB_STOP_ON_ERROR
 FLAG_USER_BIT:  equ     1               ; HUB_USER_PROGRAM
 FLAG_PAUSE_BIT: equ     2               ; HUB_PAUSE_AFTER
+FLAG_SHELL_BIT: equ     3               ; HUB_SHELL
 FLAG_CONT_BIT:  equ     7               ; HUB_CONTINUATION, set by hub_return_to
 
 ; Scratch for the API calls, which may not keep anything on the caller's
@@ -124,7 +127,20 @@ CTL_CAPMODE:    equ     CTL_SCRMODE + 1                   ; 1
 ; ID, $FFFF for the system font (3 bytes; the top one is 0).
 CTL_FONT:       equ     CTL_CAPMODE + 1                   ; 3
 
-CTL_END:        equ     CTL_FONT + 3
+; Nested shells (HUB_SHELL jobs, see shell/shells.s). While one is open, the
+; last CTL_HELD jobs in the queue wait: they belong to the frames below it,
+; and run only after its exit; and the frames up to CTL_FLOOR are out of
+; reach: hub_push and hub_return_to see no open frame there, so a program
+; run in the shell can't add to them. CTL_SHELLS counts the open shells, and
+; CTL_SHELL_STACK keeps, for each, the CTL_HELD and CTL_FLOOR of the shell
+; outside it.
+CTL_HELD:       equ     CTL_FONT + 3                      ; 1
+CTL_FLOOR:      equ     CTL_HELD + 1                      ; 1
+CTL_SHELLS:     equ     CTL_FLOOR + 1                     ; 1
+CTL_SHELL_STACK: equ    CTL_SHELLS + 1                    ; 2 * MAX_SHELLS
+MAX_SHELLS:     equ     5
+
+CTL_END:        equ     CTL_SHELL_STACK + 2 * MAX_SHELLS  ; = SRAM_END: full
 
 CMD_MAX:        equ     255             ; longest line accepted, without "Try "
 NVECTORS:       equ     48              ; MOS's interrupt vectors, numbered 0, 2, ... $5E
