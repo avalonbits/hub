@@ -47,6 +47,14 @@
 ;   N   The continuation. The first time, queue the next round the same way
 ;       and return 19 -- a middle round's result, which must not count; the
 ;       second time, print "n-chain done" and return 0, the chain's result.
+;   s   Open a frame whose job is a nested shell (HUB_SHELL), with the
+;       continuation "client Z".
+;   Z   Print "shell back: last R, failed F".
+;   P   Push "Echo LEAKED" and set the continuation "Echo LEAKED2" without
+;       opening a frame: both must be refused, at the prompt or in a nested
+;       shell, whose outer frames are out of reach.
+;   w   Open a frame with "fail" (stop on error) and "Echo NOT-W", and no
+;       continuation: a failure with nothing to skip to.
 ;   X   Ask for "GROW" with 30000 bytes, more than the area holds: print
 ;       whether it was refused, and "GROW"'s first byte after.
 ;
@@ -123,6 +131,14 @@ start:
         jp      z, chain_start
         cp      a, 'N'
         jp      z, chain_next
+        cp      a, 's'
+        jp      z, shell_start
+        cp      a, 'Z'
+        jp      z, shell_back
+        cp      a, 'w'
+        jp      z, fail_open
+        cp      a, 'P'
+        jp      z, push_no_frame
         cp      a, 'X'
         jp      z, grow_too_big
 
@@ -345,6 +361,59 @@ chain_round:
         ld      hl, cmd_n_next
         ld      a, HUB_RETURN_TO
         jp      hub
+
+shell_start:
+        ld      hl, tag_shel
+        ld      a, HUB_ENTER
+        call    hub
+        ld      hl, cmd_shell
+        ld      c, HUB_SHELL
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_shell_back
+        ld      a, HUB_RETURN_TO
+        call    hub
+        jp      finish
+
+shell_back:
+        ld      hl, msg_shell_back
+        call    print
+        ld      a, HUB_LAST_RESULT
+        call    hub
+        ld      a, l
+        call    print_u8
+        ld      hl, msg_failed_job2
+        call    print
+        ld      a, HUB_FAILED_JOB
+        call    hub
+        ld      a, l
+        call    print_u8
+        call    newline
+        jp      finish
+
+push_no_frame:
+        ld      hl, cmd_leaked
+        ld      c, 0
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_leaked2
+        ld      a, HUB_RETURN_TO
+        call    hub
+        jp      finish
+
+fail_open:
+        ld      hl, tag_wfal
+        ld      a, HUB_ENTER
+        call    hub
+        ld      hl, cmd_fail
+        ld      c, HUB_STOP_ON_ERROR
+        ld      a, HUB_PUSH
+        call    hub
+        ld      hl, cmd_not_w
+        ld      c, 0
+        ld      a, HUB_PUSH
+        call    hub
+        jp      finish
 
 grow_too_big:
         ld      hl, tag_grow
@@ -709,6 +778,14 @@ cmd_failed:     db      "client F", 0
 msg_nohub:      db      "no hub", 13, 10, 0
 tag_keep:       db      "KEEP"
 tag_grow:       db      "GROW"
+tag_shel:       db      "SHEL"
+tag_wfal:       db      "WFAL"
+cmd_shell:      db      "shell", 0              ; a HUB_SHELL job runs nothing
+cmd_shell_back: db      "client Z", 0
+cmd_not_w:      db      "Echo NOT-W", 0
+cmd_leaked:     db      "Echo LEAKED", 0
+cmd_leaked2:    db      "Echo LEAKED2", 0
+msg_shell_back: db      "shell back: last ", 0
 tag_ncnt:       db      "NCNT"
 cmd_n_round:    db      "Echo n-round", 0
 cmd_n_next:     db      "client N", 0

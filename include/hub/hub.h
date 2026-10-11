@@ -42,6 +42,11 @@
                                        to return", and wait for one -- unless
                                        the variable Hub$NoPause is set, as for
                                        tests. Needs hub 0.3. */
+#define HUB_SHELL           0x08    /* the job is hub's prompt, for the user:
+                                       the jobs after it wait until the user
+                                       types exit, which ends the job with 0.
+                                       The command is ignored. Needs hub 0.6;
+                                       see docs/API.md. */
 
 #define HUB_CMD_MAX         93      /* longest command a job can hold */
 #define HUB_MAX_JOBS        8       /* jobs waiting, continuations included;

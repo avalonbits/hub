@@ -125,6 +125,7 @@ host from its source. The tests run on
 | [`test/run.sh`](test/run.sh) | hub in the CLI emulator, through scripts on the card; and, for each safeguard, a build without it that shows the check fails |
 | [`test/screen.sh`](test/screen.sh) | the screen and font a user program gets, and its captured screen, on the full emulator's real VDP (SDL's dummy video driver) |
 | [`test/examples.sh`](test/examples.sh) | the examples, under hub and without it, and built by acc too |
+| [`test/shells.sh`](test/shells.sh) | nested shells (`HUB_SHELL`): held jobs, programs inside, nesting, a reset |
 | [`test/libs.sh`](test/libs.sh) | the release's zips, as a developer uses each with agondev or acc |
 
 The tools are found through `ZAP_SRC` (zap's source, default `~/code/zap`),

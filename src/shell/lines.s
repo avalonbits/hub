@@ -2,7 +2,9 @@
 ;
 ; Part of the shell; hub.s includes it, in order.
 
-; readline: HL = the next line to run, or 0 to leave hub.
+; readline: HL = the next line to run, carry clear; HL = 0, carry clear, to
+; leave hub; or carry set when there is nothing to run but hub goes on (an
+; exit that closed a nested shell, see shell/shells.s).
 ;
 ; The screen mode is noted first: it is the one the user has at hub's
 ; prompt, which a HUB_USER_PROGRAM job starts in whatever the program that
@@ -31,9 +33,18 @@ prompt_line:
         ld      c, var_expand
         ld      a, mos_readvarval
         rst.lil $08
+        ld      a, (CTL_SHELLS)         ; in a nested shell, its tag
+        or      a, a                    ; first: "ADE * "
+        jr      z, @plain
+        call    print_tag
+        ld      hl, space
+        call    print
+
+@plain:
         ld      hl, PROMPT_BUF
+        ld      a, (PROMPT_BUF)
         or      a, a
-        jr      z, @show
+        jr      nz, @show
         ld      hl, star
 
 @show:
@@ -68,7 +79,7 @@ script_line:
         ld      a, mos_fopen
         rst.lil $08
         or      a, a
-        jr      z, @missing
+        jp      z, @missing
         ld      (SCRIPT_FH), a
 
         ld      hl, (CTL_LINE)
@@ -79,7 +90,7 @@ script_line:
         call    hl_is_zero
         jr      z, @read
         call    read_line
-        jr      c, @eof
+        jp      c, @eof
         ld      hl, (SKIP)
         dec     hl
         ld      (SKIP), hl
@@ -87,7 +98,7 @@ script_line:
 
 @read:
         call    read_line
-        jr      c, @eof
+        jp      c, @eof
         ld      hl, (CTL_LINE)
         inc     hl
         ld      (CTL_LINE), hl
@@ -102,6 +113,14 @@ script_line:
         jr      z, script_line
 
         push    hl
+        ld      a, (CTL_SHELLS)         ; in a nested shell, its tag first,
+        or      a, a                    ; as at the prompt: "ADE hub> ..."
+        jr      z, @echo
+        call    print_tag
+        ld      hl, space
+        call    print
+
+@echo:
         ld      hl, script_echo
         call    print
         pop     hl
@@ -115,6 +134,7 @@ script_line:
 @eof:
         call    close_script
         ld      hl, 0
+        or      a, a                    ; carry clear: leave hub
 
         ret
 
@@ -122,6 +142,7 @@ script_line:
         ld      hl, msg_noscript
         call    print
         ld      hl, 0
+        or      a, a
 
         ret
 
@@ -140,7 +161,16 @@ builtin:
         ld      de, s_exit
         call    word_is
         pop     hl
-        ret     nz
-        ld      hl, 0
+        jr      z, @exit
+        or      a, a                    ; carry clear: a line to run
+
+        ret
+
+; exit closes a nested shell if one is open, and leaves hub if not.
+@exit:
+        ld      a, (CTL_SHELLS)
+        or      a, a
+        jp      nz, shell_exit          ; carry set: nothing to run
+        ld      hl, 0                   ; carry clear from the or: leave
 
         ret

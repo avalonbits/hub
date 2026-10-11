@@ -131,6 +131,20 @@ The flags:
   "Press a key to return", and wait for a key. With the variable
   `Hub$NoPause` set (`Set Hub$NoPause 1`), hub prints the message and doesn't
   wait: scripted tests set it.
+- **`HUB_SHELL`** -- the job is hub's prompt, for the user to work at: an
+  IDE's "shell" key. The command is ignored (push `"shell"`, say). When the
+  job starts, hub says `hub: exit goes back to ADE` (the frame's tag), and
+  reads lines -- from the prompt, or from the script under `hub -f` -- with
+  the tag in front (`ADE *`). Everything works there as at the top level,
+  hub clients included; the jobs that were waiting -- your continuation and
+  anything below it -- wait until the user types `exit`, which ends the
+  job with 0, and your frame carries on. While the shell is open, programs
+  run in it can't push into your frame or those below it: `hub_push` and
+  `hub_return_to` see no open frame until they open their own. Add
+  `HUB_USER_PROGRAM` to give the shell the prompt's screen. Shells nest five
+  deep; past that the job ends with 100 and holds nothing. A reset in a
+  shell keeps it: hub resumes in it, and `exit` still goes back. (Since hub
+  0.6.)
 
 ### `int hub_return_to(const char *cmd)`
 
@@ -166,7 +180,7 @@ Memory that keeps its contents between runs: the same tag gives the same
 block. A new block is zeroed. Asking for more than the block holds grows it,
 keeping what it held and zeroing the rest -- but it may move, so take the
 pointer again rather than keeping it across such a call. `NULL` if there is
-no room: blocks share about 24 KB, sixteen of them at most.
+no room: blocks share about 22 KB, sixteen of them at most.
 
 Blocks last while hub runs, and through a warm reset. A fresh start of hub
 begins with none.
@@ -252,6 +266,12 @@ the same way: only the round that queues no next one counts. So
 program that wants its caller to see it fail returns non-zero from its last
 continuation. (Since hub 0.5.)
 
+**Drop the user at the prompt.** Save your state, open a frame, push a job
+with `HUB_SHELL | HUB_USER_PROGRAM`, set your continuation, return. The user
+works at hub's prompt; at `exit`, your continuation brings you back. Under
+`hub -f`, the script's next lines are what the shell reads, so a test drives
+it with its commands and then a line `exit`.
+
 **Run the user's program.** Push it with `HUB_USER_PROGRAM`, and
 `HUB_PAUSE_AFTER` if its output should stay on screen until a key. Don't
 stop on its error: the continuation gets its result either way. Redraw your
@@ -321,7 +341,7 @@ address of its API header:
 
     +0  "HUB"        HUB_MAGIC
     +3  major        HUB_MAJOR      0
-    +4  minor        HUB_MINOR      5
+    +4  minor        HUB_MINOR      6
     +5  calls        HUB_COUNT      9
     +6  JP ...       one 4-byte jump per call
 
@@ -348,6 +368,7 @@ C library does that for `hub_user_screen`.
 | 0.4.1 | 0.4 | `HUB_USER_PROGRAM` gives the prompt's font, and puts the prompt's screen back afterwards |
 | 0.4.2 | 0.4 | `hub_block` grows a block |
 | 0.5.0 | 0.5 | a job that is itself a hub client counts with its final result, what its last continuation returns |
+| 0.6.0 | 0.6 | `HUB_SHELL`: drop the user at hub's prompt, and come back at `exit`; blocks start at `0xB1800` (about 22 KB) |
 
 ## Limits
 
@@ -356,4 +377,4 @@ C library does that for `hub_user_screen`.
 | jobs waiting | 8, continuations included |
 | frames open | 6 |
 | a command | 93 characters |
-| blocks | 16, in about 24 KB |
+| blocks | 16, in about 22 KB |

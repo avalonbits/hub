@@ -89,8 +89,10 @@ push_job:
         ld      (CTL_PUSH_FLAGS), a
         ld      (CTL_PUSH_CMD), hl
 
-        ld      a, (CTL_DEPTH)
-        or      a, a
+        ld      a, (CTL_FLOOR)          ; 0, or a nested shell's depth:
+        ld      b, a                    ; frames up to it are out of reach
+        ld      a, (CTL_DEPTH)          ; (HL is the command: kept for
+        cp      a, b                    ; @measure)
         ld      a, 1
         jr      z, api_out              ; no frame
 

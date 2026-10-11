@@ -19,6 +19,12 @@
         INCLUDE "hub.inc"
         INCLUDE "config.inc"
 
+; The control block must end within the on-chip RAM; a field added past it
+; would land beyond the eZ80's SRAM. Fail the build if it does.
+        IF (SRAM_END - CTL_END) >> 31   ; negative: past the end
+        db      control_block_past_sram_end
+        ENDIF
+
         ORG     SHELL_BASE
 
         jp      start
@@ -41,12 +47,14 @@ RESUMING:       equ     SHELL_VARS + 388        ; 1 while resuming after a reset
 NUM_VAL:        equ     SHELL_VARS + 389        ; 3: number's value so far
 NUM_NEG:        equ     SHELL_VARS + 392        ; 1: it had a '-'
 NUM_DIG:        equ     SHELL_VARS + 393        ; 1: the digit being added
+JOB_FLAGS_V:    equ     SHELL_VARS + 394        ; 1: job_start's flags
 
         INCLUDE "shell/start.s"
         INCLUDE "shell/lines.s"
         INCLUDE "shell/jobs.s"
         INCLUDE "shell/grow.s"
         INCLUDE "shell/results.s"
+        INCLUDE "shell/shells.s"
         INCLUDE "shell/font.s"
         INCLUDE "shell/script.s"
         INCLUDE "shell/text.s"

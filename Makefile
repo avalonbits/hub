@@ -22,6 +22,9 @@ API_COUNT ?= 9          # entries hub advertises; 8 poses as hub 0.3, for a test
 
 ZAP     := $(abspath build/zap)
 CORE_MAX := 1792        # CTL_BASE - CORE_BASE: the core's code must end below its data
+SHELL_MAX := 6144       # BLOCKS - SHELL_BASE: the shell, the core inside it, must
+                        # end below the client blocks, which a moslet's reload
+                        # would otherwise overwrite
 
 ZAP_SRCS := $(addprefix $(ZAP_SRC)/, src/zap.c src/symtab.c src/scan.c src/expr.c \
 	src/macro.c src/directive.c src/insn.c src/object.c src/buf_reader.c \
@@ -66,6 +69,8 @@ $(B)/hub.bin: src/hub.s $(SHELL_SRCS) src/mos_api.inc src/layout.inc src/hub.inc
 	cp src/hub.s src/mos_api.inc src/layout.inc src/hub.inc src/version.inc $(B)/
 	rm -rf $(B)/shell && cp -r src/shell $(B)/shell
 	cd $(B) && $(ZAP) -c hub.s hub.bin > hub.log || { cat hub.log; exit 1; }
+	@size=$$(stat -c %s $@); if [ $$size -gt $(SHELL_MAX) ]; then \
+		echo "hub.bin is $$size bytes; it must fit in $(SHELL_MAX)"; rm -f $@; exit 1; fi
 
 $(B)/test/%.bin: test/progs/%.s src/mos_api.inc src/hub.inc $(ZAP)
 	@mkdir -p $(B)/test
@@ -152,6 +157,7 @@ test: all
 	test/run.sh
 	test/screen.sh
 	test/examples.sh
+	test/shells.sh
 	test/libs.sh
 
 clean:
